@@ -108,6 +108,7 @@ namespace WhyKnot.AvatarQol.Tools {
         // ------ GUI --------------------------------------------------------
 
         private void OnGUI() {
+            using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             DrawSdkBanner();
             DrawTitleBar();
             WkStyles.Notice(NoticeKind.Info,
@@ -626,7 +627,7 @@ namespace WhyKnot.AvatarQol.Tools {
             if (preset == null || _analysis == null) { _plan = null; return; }
             try { _plan = preset.BuildPlan(_analysis); }
             catch (Exception ex) {
-                Debug.LogException(ex);
+                AvatarQolLogger.Instance.Exception(ex);
                 _plan = null;
             }
         }
@@ -655,7 +656,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     "OK");
                 return;
             }
-            Debug.Log($"[Avatar QoL] Applied {_plan.PresetDisplayName} — {created} PhysBone(s), {_plan.Colliders.Count} collider(s).");
+            AvatarQolLogger.Instance.Info($"Applied {_plan.PresetDisplayName} — {created} PhysBone(s), {_plan.Colliders.Count} collider(s).");
             // Capture the just-created components for the tweak strip.
             CaptureTweakSnapshots();
             if (_plan.PhysBones.Count > 0 && _plan.PhysBones[0].Root != null) {

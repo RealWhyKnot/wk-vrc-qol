@@ -226,16 +226,16 @@ namespace WhyKnot.AvatarQol.MeshFixes.Lifecycle {
             if (result == null || (result.OpsApplied == 0 && result.OpsSkipped == 0 && result.Errors.Count == 0)) return;
 
             var lines = new List<string> {
-                $"[Avatar QoL] Mesh fix {context}: {result.Summary}"
+                $"Mesh fix {context}: {result.Summary}"
             };
             foreach (var w in result.Warnings) lines.Add("  Warning: " + w);
             foreach (var e in result.Errors) lines.Add("  Error: " + e);
             var text = string.Join("\n", lines);
 
             switch (type) {
-                case LogType.Error: Debug.LogError(text); break;
-                case LogType.Warning: Debug.LogWarning(text); break;
-                default: Debug.Log(text); break;
+                case LogType.Error: AvatarQolLogger.Instance.Error(text); break;
+                case LogType.Warning: AvatarQolLogger.Instance.Warning(text); break;
+                default: AvatarQolLogger.Instance.Info(text); break;
             }
         }
     }

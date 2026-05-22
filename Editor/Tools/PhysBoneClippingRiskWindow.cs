@@ -68,6 +68,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void OnGUI() {
+            using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             DrawTitleBar();
             WkStyles.Notice(NoticeKind.Info,
                 "This is a heavier physics-risk scan, so it checks one mesh at a time. Pick the mesh that actually moves from PhysBones, then scan.");
@@ -344,7 +345,7 @@ namespace WhyKnot.AvatarQol.Tools {
             var surfaces = BuildSurfaceList();
             _lastSurfaceRendererCount = surfaces.Count;
             var log = _verboseLog ? new StringBuilder() : null;
-            log?.AppendLine("[Avatar QoL] PhysBone Clipping Risks verbose log");
+            log?.AppendLine("PhysBone Clipping Risks verbose log");
             log?.AppendLine($"  target={PathUtility.GetGameObjectPath(_targetRenderer.gameObject)}");
             log?.AppendLine($"  comparisonRenderers={surfaces.Count - 1}, surfaceRenderers={surfaces.Count}");
             log?.AppendLine($"  weightFloor={_weightFloor:F4}, clearanceMargin={_clearanceMargin:F3}, maxIssuesPerPhysBone={_maxIssuesPerPhysBone}");
@@ -376,7 +377,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 log.AppendLine($"  drivenVertexSamples={settings.DrivenVertexSampleCount}");
                 log.AppendLine($"  surfaceSamples={settings.SurfaceSampleCount}");
                 log.AppendLine($"  risks={_issues.Count}");
-                Debug.Log(log.ToString());
+                AvatarQolLogger.Instance.Info(log.ToString());
             }
             SceneView.RepaintAll();
         }
@@ -603,7 +604,7 @@ namespace WhyKnot.AvatarQol.Tools {
             if (list.Count == 0) return;
 
             var log = _verboseLog ? new StringBuilder() : null;
-            log?.AppendLine("[Avatar QoL] PhysBone Clipping Risks motion reduction");
+            log?.AppendLine("PhysBone Clipping Risks motion reduction");
             var result = PhysBoneClippingAnalyzer.ReduceMotionIssues(list, log);
             _scanSummary = result.SourcesChanged > 0
                 ? $"{result.Summary} Scan again to verify."
@@ -615,7 +616,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 log.AppendLine($"  sourcesChanged={result.SourcesChanged}");
                 log.AppendLine($"  issuesCovered={result.IssuesCovered}");
                 log.AppendLine($"  unsupportedSources={result.UnsupportedSources}");
-                Debug.Log(log.ToString());
+                AvatarQolLogger.Instance.Info(log.ToString());
             }
             SceneView.RepaintAll();
             Repaint();

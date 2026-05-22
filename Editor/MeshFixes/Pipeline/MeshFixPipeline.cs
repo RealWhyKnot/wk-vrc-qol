@@ -152,7 +152,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.Pipeline {
                     }
                 } catch (Exception ex) {
                     result.Errors.Add($"{op.DisplayName} on {OwnerName(op)}: {ex.Message}");
-                    Debug.LogException(ex, op.Owner);
+                    AvatarQolLogger.Instance.Exception(ex, $"in {OwnerName(op)}");
                     result.OpsSkipped++;
                 }
             }

@@ -159,6 +159,7 @@ namespace WhyKnot.AvatarQol.Tools {
         // ------ GUI --------------------------------------------------------
 
         private void OnGUI() {
+            using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             // Top-of-window banner only when applicable; otherwise it lives
             // inside Advanced. Hoisting it here keeps the user from missing
             // a half-skipped scan.
@@ -667,13 +668,13 @@ namespace WhyKnot.AvatarQol.Tools {
                 importersToReimport.Add(path);
             }
             if (unfixable > 0) {
-                Debug.LogWarning(
-                    $"[Avatar QoL] {unfixable} skipped mesh(es) had no ModelImporter " +
+                AvatarQolLogger.Instance.Warning(
+                    $"{unfixable} skipped mesh(es) had no ModelImporter " +
                     $"(procedurally generated, or imported by a different pipeline). " +
                     $"Read/Write couldn't be auto-enabled on those.");
             }
             if (importersToReimport.Count > 0) {
-                Debug.Log($"[Avatar QoL] Enabled Read/Write on {importersToReimport.Count} model asset(s); rescanning.");
+                AvatarQolLogger.Instance.Info($"Enabled Read/Write on {importersToReimport.Count} model asset(s); rescanning.");
             }
             Scan();
         }
@@ -743,7 +744,7 @@ namespace WhyKnot.AvatarQol.Tools {
             float floor = isCenter ? _centerCrossSideFloor : _weightFloor;
 
             var sb = new StringBuilder();
-            sb.AppendLine($"[Avatar QoL] Inspect vertex #{_inspectVertexIndex} of {PathUtility.GetGameObjectPath(smr.gameObject)}");
+            sb.AppendLine($"Inspect vertex #{_inspectVertexIndex} of {PathUtility.GetGameObjectPath(smr.gameObject)}");
             sb.AppendLine($"  world pos: ({worldPos.x:F4}, {worldPos.y:F4}, {worldPos.z:F4})  {anchorDesc}");
             sb.AppendLine($"  vertex side: {vertexSide} (isCenter={isCenter}, applicable floor={floor:F4})");
             sb.AppendLine($"  weights ({wCount}):");
@@ -771,7 +772,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 sb.AppendLine($"    {boneName}  weight={bw.weight:F4}  humanoid={humanoidSide}  spatial={spatialSide}  →  {verdict}");
             }
-            Debug.Log(sb.ToString());
+            AvatarQolLogger.Instance.Info(sb.ToString());
             _showConsoleNoticeAfterInspect = true;
         }
 
@@ -806,7 +807,7 @@ namespace WhyKnot.AvatarQol.Tools {
             int verticesScanned = 0;
             int renderersScanned = 0;
             var globalLog = _verboseLog ? new StringBuilder() : null;
-            globalLog?.AppendLine($"[Avatar QoL] Weight Sanity Check verbose log");
+            globalLog?.AppendLine($"Weight Sanity Check verbose log");
             globalLog?.AppendLine($"  weightFloor={_weightFloor:F4}, centerMargin={_centerMargin:F3}, scanCenterBand={_scanCenterBand}, centerCrossSideFloor={_centerCrossSideFloor:F3}");
             globalLog?.AppendLine($"  avatar={_animator.gameObject.name}, leftSign={sideMap.LeftSignInHipsLocal}");
             if (_limitToRenderer != null) {
@@ -835,7 +836,7 @@ namespace WhyKnot.AvatarQol.Tools {
             if (globalLog != null) {
                 globalLog.AppendLine();
                 globalLog.AppendLine($"  total issues flagged: {_issues.Count}");
-                Debug.Log(globalLog.ToString());
+                AvatarQolLogger.Instance.Info(globalLog.ToString());
             }
             SceneView.RepaintAll();
         }
@@ -1039,7 +1040,7 @@ namespace WhyKnot.AvatarQol.Tools {
             var weights = mesh.GetAllBoneWeights();
             var bonesPerVertex = mesh.GetBonesPerVertex();
             var sb = new StringBuilder();
-            sb.AppendLine($"[Avatar QoL] Weight dump for {PathUtility.GetGameObjectPath(smr.gameObject)}");
+            sb.AppendLine($"Weight dump for {PathUtility.GetGameObjectPath(smr.gameObject)}");
             sb.AppendLine($"  vertices={mesh.vertexCount}, bones={bones.Length}");
 
             // First, list every bone with its classification — handy when
@@ -1092,7 +1093,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 cursor += wCount;
             }
-            Debug.Log(sb.ToString());
+            AvatarQolLogger.Instance.Info(sb.ToString());
             _showConsoleNoticeAfterDump = true;
         }
 
@@ -1185,8 +1186,8 @@ namespace WhyKnot.AvatarQol.Tools {
             string skipNote = result.Skipped > 0
                 ? $" Skipped {result.Skipped} (weight no longer present)."
                 : "";
-            Debug.Log(
-                $"[Avatar QoL] Weight fix: {result.Fixed} weight(s) corrected — " +
+            AvatarQolLogger.Instance.Info(
+                $"Weight fix: {result.Fixed} weight(s) corrected — " +
                 $"{result.Mirrored} mirrored, {result.Zeroed} zeroed + renormalised, " +
                 $"across {result.RenderersTouched} renderer(s).{clonedNote}{skipNote}");
             AssetDatabase.SaveAssets();

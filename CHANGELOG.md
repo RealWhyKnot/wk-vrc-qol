@@ -9,7 +9,12 @@ All notable changes to this project will be documented in this file. Format foll
 
 ## Unreleased
 
+### Added
+- **logging:** Every diagnostic line in this package now routes through `AvatarQolLogger.Instance` (the package's registered `WkLogger`). Sessions are written to `%LocalAppData%/WhyKnot/Logs/dev.whyknot.avatar-qol/session-<timestamp>.log`, capped at 3 retained sessions per package. Each line carries a level tag, source file:line, calling method, and message. Info, Warning, and Error mirror to the Unity Console as before; Debug stays file-only. The session file is project-independent so a bug report can point at the same path regardless of which Unity project surfaced it. Multi-line StringBuilder dumps from `WeightSanityCheckWindow` (Inspect Vertex, Weight Dump, verbose scan log) and `PhysBoneClippingRiskWindow` (verbose scan log) now go through the logger too.
+- **theming:** Tool window OnGUI / OnInspectorGUI bodies open `using (WkStyles.Scope(WkTheme.WhyKnot))` so the IMGUI palette emits the WhyKnot brand colors (black / gray / light blue). Covers Weight Sanity Check, PhysBone Preset, PhysBone Clipping Risks, Bone Merger, Mesh Fix window, and the AutoTightenToBody / MeshFixController inspector editors.
+
 ### Changed
+- **deps:** Bumped `dev.whyknot.core` dependency to `>=1.1.0` so the new theming system and `WkLogger` are guaranteed available.
 - **deps:** Add `dev.whyknot.core` (>=1.0.0) as a hard `vpmDependency`. VCC auto-installs the shared utility package alongside vrc-avatar-qol. Internal-only refactor that moves `AvatarQolStyles` (palette + lazy GUIStyles + IMGUI primitives) -> `WkStyles`, `HumanoidSideMap` + `BoneSide` -> `WhyKnot.Core.Utilities`, `GetGameObjectPath` -> `WhyKnot.Core.Utilities.PathUtility`, and the FBX-clone helper that `WeightFixer` and `BoneMergerWindow` duplicated -> `WhyKnot.Core.Utilities.FbxMeshUtility`. The three domain-specific issue-category colors (humanoid / spatial / center) stay in this package as `AvatarQolCategoryColors`. No user-visible behaviour change beyond Ctrl+Z on `WeightFixer` now also removing the cloned `.mesh` asset from disk (parity with Bone Merger's existing behaviour).
 - **deps:** Bump actions/checkout from 4 to 6 (#1) (0d8ab2b)
 - Mesh Fix pipeline: fix native-array leak, missing using, idempotent delayCall, preview leak; only clone write-target meshes (31d1746)

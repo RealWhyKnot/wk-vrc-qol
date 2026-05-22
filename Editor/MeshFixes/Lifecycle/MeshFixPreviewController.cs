@@ -187,7 +187,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.Lifecycle {
                 ForgetPreview();
                 MeshFixSessionState.SetPreviewActive(false);
             } catch (Exception ex) {
-                Debug.LogWarning($"[Avatar QoL] Preview recovery hit an unexpected error: {ex.Message}");
+                AvatarQolLogger.Instance.Warning($"Preview recovery hit an unexpected error: {ex.Message}");
             }
         }
 

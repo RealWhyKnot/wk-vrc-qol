@@ -27,6 +27,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
         }
 
         public override void OnInspectorGUI() {
+            using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             serializedObject.Update();
 
             var controller = (WhyKnotMeshFixController)target;

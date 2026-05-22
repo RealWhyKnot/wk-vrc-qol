@@ -87,6 +87,7 @@ namespace WhyKnot.AvatarQol.Tools {
         // ------ GUI --------------------------------------------------------
 
         private void OnGUI() {
+            using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             DrawTitleBar();
             WkStyles.Notice(NoticeKind.Info,
                 "Folds a stray duplicate bone (e.g. Blender's Boob_L.001) into its kept counterpart. Skin weights transfer across every SkinnedMeshRenderer under the avatar, then the merged-away bone is removed.");
@@ -415,7 +416,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
             } catch (System.Exception ex) {
                 Undo.RevertAllInCurrentGroup();
-                Debug.LogException(ex);
+                AvatarQolLogger.Instance.Exception(ex);
                 _resultSummary = "Merge failed -- nothing was changed. See console for the exception.";
             }
         }

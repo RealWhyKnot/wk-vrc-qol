@@ -109,7 +109,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 Undo.CollapseUndoOperations(undoGroup);
             } catch (System.Exception ex) {
                 Undo.RevertAllInCurrentGroup();
-                Debug.LogException(ex);
+                AvatarQolLogger.Instance.Exception(ex);
             }
             return result;
         }

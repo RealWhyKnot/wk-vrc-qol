@@ -66,6 +66,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
         }
 
         public override void OnInspectorGUI() {
+            using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             serializedObject.Update();
 
             EditorGUILayout.LabelField("Auto Tighten To Body", WkStyles.SubsectionTitle);
@@ -186,7 +187,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
             if (string.IsNullOrEmpty(path)) return;
             var importer = AssetImporter.GetAtPath(path) as ModelImporter;
             if (importer == null) {
-                Debug.LogWarning($"[Avatar QoL] {path} is not a ModelImporter asset; cannot toggle Read/Write here.");
+                AvatarQolLogger.Instance.Warning($"{path} is not a ModelImporter asset; cannot toggle Read/Write here.");
                 return;
             }
             importer.isReadable = true;

@@ -79,7 +79,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 return created;
             } catch (System.Exception ex) {
                 Undo.RevertAllInCurrentGroup();
-                Debug.LogException(ex);
+                AvatarQolLogger.Instance.Exception(ex);
                 error = ex.Message;
                 return -1;
             }
