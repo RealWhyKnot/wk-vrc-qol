@@ -24,7 +24,7 @@ namespace WhyKnot.AvatarQol {
 
         public const string PackageId = "dev.whyknot.avatar-qol";
         public const string DisplayName = "Avatar QoL";
-        public const string Version = "1.1.0-beta.3";
+        public const string Version = "1.1.0-beta.4";
 
         public static readonly WkLogger Instance = new WkLogger(PackageId, DisplayName, Version);
 

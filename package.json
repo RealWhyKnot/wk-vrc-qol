@@ -1,7 +1,7 @@
 {
   "name": "dev.whyknot.avatar-qol",
   "displayName": "Avatar QoL",
-  "version": "1.1.0-beta.3",
+  "version": "1.1.0-beta.4",
   "unity": "2022.3",
   "description": "Editor tools for VRChat avatars: Auto Mesh Fixes pipeline (nondestructive garment-tighten / body-hide blendshapes), Weight Sanity Check, PhysBone Presets, PhysBone Clipping Risks, Bone Merger.",
   "author": {
@@ -9,7 +9,7 @@
     "url": "https://whyknot.dev"
   },
   "license": "GPL-3.0-or-later",
-  "url": "https://github.com/RealWhyKnot/vrc-avatar-qol/releases/download/v1.1.0-beta.3/dev.whyknot.avatar-qol-1.1.0-beta.3.zip",
+  "url": "https://github.com/RealWhyKnot/vrc-avatar-qol/releases/download/v1.1.0-beta.4/dev.whyknot.avatar-qol-1.1.0-beta.4.zip",
   "documentationUrl": "https://github.com/RealWhyKnot/vrc-avatar-qol",
   "changelogUrl": "https://github.com/RealWhyKnot/vrc-avatar-qol/blob/main/CHANGELOG.md",
   "vpmDependencies": {

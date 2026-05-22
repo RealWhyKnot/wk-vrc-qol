@@ -80,7 +80,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.Lifecycle {
                 try {
                     _initTransformsMethod.Invoke(c, null);
                 } catch (Exception ex) {
-                    AvatarQolLogger.Instance.Warning($"PhysBone reinit on {c.name} failed: {ex.Message}", c);
+                    AvatarQolLogger.Instance.Warning($"PhysBone reinit on {c.name} failed: {ex.Message}");
                 }
             }
         }
