@@ -23,6 +23,8 @@ using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 
 #if VRC_SDK_VRCSDK3
 using VRC.SDK3.Dynamics.PhysBone.Components;
@@ -108,7 +110,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnGUI() {
             DrawSdkBanner();
             DrawTitleBar();
-            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Info,
+            WkStyles.Notice(NoticeKind.Info,
                 "Flow: choose the bones, pick the suggested preset or another card, review the plan, then apply.");
             DrawSelection();
             EditorGUILayout.Space(2);
@@ -131,7 +133,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 EditorGUILayout.LabelField(
                     new GUIContent("PhysBone Preset",
                         "Set up VRChat PhysBones on selected bones using plain presets such as ears, tail, hair, or dress."),
-                    AvatarQolStyles.SectionTitle);
+                    WkStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
                         new GUIContent("?", "Open the Avatar QoL wiki page for this tool in your browser."),
@@ -143,14 +145,14 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawSdkBanner() {
             if (PhysBonePlanApplier.SdkAvailable) return;
-            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+            WkStyles.Notice(NoticeKind.Warning,
                 "VRChat SDK 3 (PhysBone) is not installed in this project. The window will analyse selections and preview plans, but Apply is disabled.");
         }
 
         // -------- Selection panel --------
 
         private void DrawSelection() {
-            using (AvatarQolStyles.Section($"1. Choose bones ({_selection.Count})",
+            using (WkStyles.Section($"1. Choose bones ({_selection.Count})",
                     "Drop the bones the preset will set up. Each top-level bone you drop in becomes a chain root; descendants are walked automatically. Pick the ear roots, the tail base, the skirt panel anchors, etc.")) {
                 using (new EditorGUILayout.VerticalScope(GUILayout.MinHeight(60), GUILayout.MaxHeight(150))) {
                     _selectionScroll = EditorGUILayout.BeginScrollView(_selectionScroll);
@@ -211,14 +213,14 @@ namespace WhyKnot.AvatarQol.Tools {
                     EditorGUILayout.LabelField(
                         new GUIContent("No detectable chains.",
                             "A 'chain' is a Transform plus its straight descendants. Drop hair/ear/tail roots here, not the avatar root."),
-                        AvatarQolStyles.Muted);
+                        WkStyles.Muted);
                     return;
                 }
                 EditorGUILayout.LabelField(
                     new GUIContent(
                         $"{_analysis.Chains.Count} chain(s)  •  avg {_analysis.AverageChainBoneCount} bones  •  avg length {_analysis.AverageChainLengthMetres:F3} m  •  avg bone size {_analysis.AverageBoneSize:F3} m",
                         "Auto-measured from your selection. Used to score which preset best fits."),
-                    AvatarQolStyles.Muted);
+                    WkStyles.Muted);
                 if (_analysis.HostAnimator != null) {
                     var bone = _analysis.NearestHumanoidBoneType?.ToString() ?? "n/a";
                     var msg = _analysis.HostAnimator.isHuman
@@ -226,12 +228,12 @@ namespace WhyKnot.AvatarQol.Tools {
                         : $"Host: {_analysis.HostAnimator.gameObject.name} (NOT Humanoid — ear / tail / hair / dress presets need Humanoid)";
                     EditorGUILayout.LabelField(
                         new GUIContent(msg, "Host avatar's Animator. Side classification and humanoid-mirror lookups depend on a Humanoid rig."),
-                        AvatarQolStyles.Muted);
+                        WkStyles.Muted);
                 } else {
                     EditorGUILayout.LabelField(
                         new GUIContent("No Animator found in the parent chain — limited adaptation possible.",
                             "Without an Animator the analysis can't classify side, find Hips, or auto-add leg colliders."),
-                        AvatarQolStyles.Muted);
+                        WkStyles.Muted);
                 }
             }
         }
@@ -242,7 +244,7 @@ namespace WhyKnot.AvatarQol.Tools {
             EditorGUILayout.LabelField(
                 new GUIContent("2. Pick a preset",
                     "A preset writes parameter defaults tuned for a specific use case (ears, tail, hair, dress). Pick one to see its plan."),
-                AvatarQolStyles.SubsectionTitle);
+                WkStyles.SubsectionTitle);
 
             if (_presets.Count == 0) {
                 EditorGUILayout.LabelField("No presets discovered.", EditorStyles.centeredGreyMiniLabel);
@@ -287,14 +289,14 @@ namespace WhyKnot.AvatarQol.Tools {
 
             // Selection tint (under the helpBox so border still reads).
             if (isSelected) {
-                var accent = AvatarQolStyles.ColorAccent;
+                var accent = WkStyles.ColorAccent;
                 EditorGUI.DrawRect(rect, new Color(accent.r, accent.g, accent.b, 0.10f));
             }
 
             // Suggested ribbon at top of card.
             if (isSuggested) {
                 var ribbon = new Rect(rect.x, rect.y, rect.width, 14);
-                var accent = AvatarQolStyles.ColorAccent;
+                var accent = WkStyles.ColorAccent;
                 EditorGUI.DrawRect(ribbon, new Color(accent.r, accent.g, accent.b, 0.55f));
                 GUI.Label(ribbon, "SUGGESTED", new GUIStyle(EditorStyles.miniLabel) {
                     alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold,
@@ -304,7 +306,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             // Border via four thin slabs (simpler than custom GUIStyle).
             float thick = isSuggested ? 2f : 1f;
-            var border = isSuggested ? AvatarQolStyles.ColorAccent : AvatarQolStyles.ColorDivider;
+            var border = isSuggested ? WkStyles.ColorAccent : WkStyles.ColorDivider;
             EditorGUI.DrawRect(new Rect(rect.x, rect.y, rect.width, thick), border);
             EditorGUI.DrawRect(new Rect(rect.x, rect.yMax - thick, rect.width, thick), border);
             EditorGUI.DrawRect(new Rect(rect.x, rect.y, thick, rect.height), border);
@@ -325,7 +327,7 @@ namespace WhyKnot.AvatarQol.Tools {
             var barBg = new Rect(inner.x, inner.y + 18, inner.width, 6);
             EditorGUI.DrawRect(barBg, new Color(0, 0, 0, 0.18f));
             var barFill = new Rect(barBg.x, barBg.y, barBg.width * Mathf.Clamp01(score), barBg.height);
-            var fillColor = isSuggested ? AvatarQolStyles.ColorAccent : new Color(0.3f, 0.6f, 0.9f, 0.7f);
+            var fillColor = isSuggested ? WkStyles.ColorAccent : new Color(0.3f, 0.6f, 0.9f, 0.7f);
             EditorGUI.DrawRect(barFill, fillColor);
             // Hover-over-tooltip on the score area.
             string scoreTooltip = BuildScoreTooltip(preset);
@@ -333,7 +335,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             // Description (capped to remaining space).
             var descRect = new Rect(inner.x, inner.y + 28, inner.width, inner.height - 28);
-            GUI.Label(descRect, preset.Description, AvatarQolStyles.Muted);
+            GUI.Label(descRect, preset.Description, WkStyles.Muted);
 
             // Whole-card click handler (drawn last so it's on top of visuals
             // but transparent — visual layers underneath remain readable).
@@ -366,7 +368,7 @@ namespace WhyKnot.AvatarQol.Tools {
             EditorGUILayout.LabelField(
                 new GUIContent("3. Review plan",
                     "What will be created if you click Apply. Nothing is written to the scene until then."),
-                AvatarQolStyles.SubsectionTitle);
+                WkStyles.SubsectionTitle);
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
                 _planScroll = EditorGUILayout.BeginScrollView(_planScroll);
                 if (_plan == null || (_plan.PhysBones.Count == 0 && _plan.Colliders.Count == 0)) {
@@ -377,11 +379,11 @@ namespace WhyKnot.AvatarQol.Tools {
                     EditorGUILayout.LabelField(
                         new GUIContent($"{_plan.PhysBones.Count} PhysBone(s)  •  {_plan.Colliders.Count} collider(s)",
                             "Summary of the entire plan. Each Chain section below shows its PhysBone parameters and the colliders it references."),
-                        AvatarQolStyles.Muted);
+                        WkStyles.Muted);
 
                     if (_plan.Notes.Count > 0) {
                         foreach (var n in _plan.Notes)
-                            EditorGUILayout.LabelField("• " + n, AvatarQolStyles.Muted);
+                            EditorGUILayout.LabelField("• " + n, WkStyles.Muted);
                         EditorGUILayout.Space(2);
                     }
 
@@ -405,8 +407,8 @@ namespace WhyKnot.AvatarQol.Tools {
                             EditorStyles.boldLabel);
                         foreach (var idx in orphans) {
                             var c = _plan.Colliders[idx];
-                            EditorGUILayout.LabelField($"  [{idx}] {c.Name} on {AvatarQol.GetGameObjectPath(c.AttachTo?.gameObject)}",
-                                AvatarQolStyles.Mono);
+                            EditorGUILayout.LabelField($"  [{idx}] {c.Name} on {PathUtility.GetGameObjectPath(c.AttachTo?.gameObject)}",
+                                WkStyles.Mono);
                         }
                     }
                 }
@@ -415,12 +417,12 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawChainBlock(BoneChain chain, PhysBoneSpec pb) {
-            string rootPath = AvatarQol.GetGameObjectPath(chain.Root?.gameObject);
+            string rootPath = PathUtility.GetGameObjectPath(chain.Root?.gameObject);
             bool collapsed = _collapsedChainRoots.Contains(rootPath);
             string title = $"Chain — {chain.Root?.name} → {chain.Tip?.name}  ({chain.Bones.Count} bones, {chain.LengthMetres:F3} m)";
             bool now = EditorGUILayout.Foldout(!collapsed,
                 new GUIContent(title, "Click to collapse / expand this chain's PhysBone details."),
-                true, AvatarQolStyles.FoldoutHeader);
+                true, WkStyles.FoldoutHeader);
             if (now == collapsed) {
                 if (now) _collapsedChainRoots.Remove(rootPath);
                 else _collapsedChainRoots.Add(rootPath);
@@ -430,9 +432,9 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.VerticalScope()) {
                 GUILayout.Space(2);
                 EditorGUILayout.LabelField(
-                    new GUIContent($"   PhysBone on {AvatarQol.GetGameObjectPath(pb.Root?.gameObject)}",
+                    new GUIContent($"   PhysBone on {PathUtility.GetGameObjectPath(pb.Root?.gameObject)}",
                         "The GameObject that will receive a VRCPhysBone component."),
-                    AvatarQolStyles.Mono);
+                    WkStyles.Mono);
 
                 // Parameter table — value + bold "**" mark when not SDK default.
                 DrawParamRow("pull",       pb.Pull,           Defaults.Pull,       PullHint(pb.Pull));
@@ -458,17 +460,17 @@ namespace WhyKnot.AvatarQol.Tools {
                     EditorGUILayout.LabelField(
                         new GUIContent("   Colliders attached:",
                             "Colliders this PhysBone will reference. Each row matches an entry from the plan's collider list."),
-                        AvatarQolStyles.Mono);
+                        WkStyles.Mono);
                     foreach (var idx in pb.ColliderRefs) {
                         if (idx < 0 || idx >= _plan.Colliders.Count) continue;
                         var c = _plan.Colliders[idx];
                         EditorGUILayout.LabelField(
-                            $"     [{idx}] {c.Name} on {AvatarQol.GetGameObjectPath(c.AttachTo?.gameObject)}  ({c.Shape}, r={c.Radius:F3} h={c.Height:F3})",
-                            AvatarQolStyles.Mono);
+                            $"     [{idx}] {c.Name} on {PathUtility.GetGameObjectPath(c.AttachTo?.gameObject)}  ({c.Shape}, r={c.Radius:F3} h={c.Height:F3})",
+                            WkStyles.Mono);
                     }
                 }
                 if (!string.IsNullOrEmpty(pb.Note)) {
-                    EditorGUILayout.LabelField("   • " + pb.Note, AvatarQolStyles.Muted);
+                    EditorGUILayout.LabelField("   • " + pb.Note, WkStyles.Muted);
                 }
                 GUILayout.Space(4);
             }
@@ -477,30 +479,30 @@ namespace WhyKnot.AvatarQol.Tools {
         private static void DrawParamRow(string name, float value, float sdkDefault, string hint) {
             bool diverges = !Mathf.Approximately(value, sdkDefault);
             using (new EditorGUILayout.HorizontalScope()) {
-                EditorGUILayout.LabelField($"     {name}", AvatarQolStyles.Mono, GUILayout.Width(140));
-                var style = diverges ? new GUIStyle(AvatarQolStyles.Mono) { fontStyle = FontStyle.Bold } : AvatarQolStyles.Mono;
+                EditorGUILayout.LabelField($"     {name}", WkStyles.Mono, GUILayout.Width(140));
+                var style = diverges ? new GUIStyle(WkStyles.Mono) { fontStyle = FontStyle.Bold } : WkStyles.Mono;
                 EditorGUILayout.LabelField(
                     new GUIContent($"{value:F3}{(diverges ? " **" : "")}",
                         diverges
                             ? $"Preset overrides the SDK default ({sdkDefault:F3}) → {value:F3}.\n\n{hint}"
                             : $"Matches the SDK default ({sdkDefault:F3}).\n\n{hint}"),
                     style, GUILayout.Width(80));
-                EditorGUILayout.LabelField(new GUIContent(hint, hint), AvatarQolStyles.Muted);
+                EditorGUILayout.LabelField(new GUIContent(hint, hint), WkStyles.Muted);
             }
         }
 
         private static void DrawParamRowEnum(string name, string value, string sdkDefault, string hint) {
             bool diverges = value != sdkDefault;
             using (new EditorGUILayout.HorizontalScope()) {
-                EditorGUILayout.LabelField($"     {name}", AvatarQolStyles.Mono, GUILayout.Width(140));
-                var style = diverges ? new GUIStyle(AvatarQolStyles.Mono) { fontStyle = FontStyle.Bold } : AvatarQolStyles.Mono;
+                EditorGUILayout.LabelField($"     {name}", WkStyles.Mono, GUILayout.Width(140));
+                var style = diverges ? new GUIStyle(WkStyles.Mono) { fontStyle = FontStyle.Bold } : WkStyles.Mono;
                 EditorGUILayout.LabelField(
                     new GUIContent($"{value}{(diverges ? " **" : "")}",
                         diverges
                             ? $"Preset overrides the SDK default ({sdkDefault}) → {value}.\n\n{hint}"
                             : $"Matches the SDK default ({sdkDefault}).\n\n{hint}"),
                     style, GUILayout.Width(120));
-                EditorGUILayout.LabelField(new GUIContent(hint, hint), AvatarQolStyles.Muted);
+                EditorGUILayout.LabelField(new GUIContent(hint, hint), WkStyles.Muted);
             }
         }
 
@@ -542,7 +544,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     string label = canApply
                         ? $"4. Apply plan ({_plan.PhysBones.Count} PhysBone(s), {_plan.Colliders.Count} collider(s))"
                         : "4. Apply plan";
-                    if (AvatarQolStyles.PrimaryButtonInline(
+                    if (WkStyles.PrimaryButtonInline(
                             new GUIContent(label,
                                 "Create the listed components on the listed bones in one Undo group. Ctrl+Z reverts. VRC SDK 3 must be installed."),
                             GUILayout.MinWidth(340))) {
@@ -556,7 +558,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawTweakStrip() {
-            using (AvatarQolStyles.Section($"Just applied ({_tweakSnapshots.Count} PhysBone(s)) — tweak",
+            using (WkStyles.Section($"Just applied ({_tweakSnapshots.Count} PhysBone(s)) — tweak",
                     "Multiplicative scalars applied on top of the original preset values. Drag back to 1.0× to restore exactly. Disappears when you change the selection or pick a different preset.")) {
                 using (new EditorGUILayout.HorizontalScope()) {
                     if (GUILayout.Button(new GUIContent("Reset all to 1×",
@@ -571,15 +573,15 @@ namespace WhyKnot.AvatarQol.Tools {
                         _tweakSnapshots = null;
                     }
                 }
-                AvatarQolStyles.LabeledField(new GUIContent("Spring ×",  "Scale the spring parameter on every just-applied PhysBone by this factor."),
+                WkStyles.LabeledField(new GUIContent("Spring ×",  "Scale the spring parameter on every just-applied PhysBone by this factor."),
                     () => { var v = EditorGUILayout.Slider(_tweakSpring, 0.5f, 2f); if (!Mathf.Approximately(v, _tweakSpring)) { _tweakSpring = v; ApplyTweaks(); } });
-                AvatarQolStyles.LabeledField(new GUIContent("Pull ×",    "Scale the pull parameter on every just-applied PhysBone by this factor."),
+                WkStyles.LabeledField(new GUIContent("Pull ×",    "Scale the pull parameter on every just-applied PhysBone by this factor."),
                     () => { var v = EditorGUILayout.Slider(_tweakPull, 0.5f, 2f); if (!Mathf.Approximately(v, _tweakPull)) { _tweakPull = v; ApplyTweaks(); } });
-                AvatarQolStyles.LabeledField(new GUIContent("Stiffness ×", "Scale the stiffness parameter on every just-applied PhysBone by this factor."),
+                WkStyles.LabeledField(new GUIContent("Stiffness ×", "Scale the stiffness parameter on every just-applied PhysBone by this factor."),
                     () => { var v = EditorGUILayout.Slider(_tweakStiff, 0.5f, 2f); if (!Mathf.Approximately(v, _tweakStiff)) { _tweakStiff = v; ApplyTweaks(); } });
-                AvatarQolStyles.LabeledField(new GUIContent("Gravity ×", "Scale the gravity parameter on every just-applied PhysBone by this factor."),
+                WkStyles.LabeledField(new GUIContent("Gravity ×", "Scale the gravity parameter on every just-applied PhysBone by this factor."),
                     () => { var v = EditorGUILayout.Slider(_tweakGravity, 0.5f, 2f); if (!Mathf.Approximately(v, _tweakGravity)) { _tweakGravity = v; ApplyTweaks(); } });
-                AvatarQolStyles.LabeledField(new GUIContent("Radius ×",  "Scale the radius parameter on every just-applied PhysBone by this factor."),
+                WkStyles.LabeledField(new GUIContent("Radius ×",  "Scale the radius parameter on every just-applied PhysBone by this factor."),
                     () => { var v = EditorGUILayout.Slider(_tweakRadius, 0.5f, 2f); if (!Mathf.Approximately(v, _tweakRadius)) { _tweakRadius = v; ApplyTweaks(); } });
             }
         }
@@ -588,7 +590,7 @@ namespace WhyKnot.AvatarQol.Tools {
             _advancedOpen = EditorGUILayout.Foldout(_advancedOpen,
                 new GUIContent("Advanced",
                     "Re-run analysis manually, plus the raw plan dump for debugging."),
-                true, AvatarQolStyles.FoldoutHeader);
+                true, WkStyles.FoldoutHeader);
             if (!_advancedOpen) return;
             using (new EditorGUILayout.HorizontalScope()) {
                 using (new EditorGUI.DisabledScope(_selection.Count == 0)) {

@@ -15,6 +15,8 @@ using System.Reflection;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 
 #if VRC_SDK_VRCSDK3
 using VRC.SDK3.Dynamics.PhysBone.Components;
@@ -304,7 +306,7 @@ namespace WhyKnot.AvatarQol.Tools {
             settings.SurfaceSampleCount = samples.Count;
             settings.DrivenVertexSampleCount = candidates.Count;
             if (candidates.Count == 0 || samples.Count == 0) {
-                log?.AppendLine($"  PhysBone clipping: {DescribeSourceCounts(settings)}, no weighted vertices above the PhysBone floor on {AvatarQol.GetGameObjectPath(targetRenderer.gameObject)}.");
+                log?.AppendLine($"  PhysBone clipping: {DescribeSourceCounts(settings)}, no weighted vertices above the PhysBone floor on {PathUtility.GetGameObjectPath(targetRenderer.gameObject)}.");
                 return output;
             }
 
@@ -679,7 +681,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             if (changed) {
                 EditorUtility.SetDirty(pb);
-                log?.AppendLine($"  Motion reduction: tightened live PhysBone on {AvatarQol.GetGameObjectPath(pb.gameObject)}.");
+                log?.AppendLine($"  Motion reduction: tightened live PhysBone on {PathUtility.GetGameObjectPath(pb.gameObject)}.");
             }
             return changed;
         }
@@ -704,7 +706,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             if (changed) {
                 EditorUtility.SetDirty(component);
-                log?.AppendLine($"  Motion reduction: tightened Marshmallow PB settings on {AvatarQol.GetGameObjectPath(component.gameObject)}.");
+                log?.AppendLine($"  Motion reduction: tightened Marshmallow PB settings on {PathUtility.GetGameObjectPath(component.gameObject)}.");
             }
             return changed;
         }
@@ -730,7 +732,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             if (changed) {
                 EditorUtility.SetDirty(component);
-                log?.AppendLine($"  Motion reduction: tightened reflected PhysBone settings on {AvatarQol.GetGameObjectPath(component.gameObject)}.");
+                log?.AppendLine($"  Motion reduction: tightened reflected PhysBone settings on {PathUtility.GetGameObjectPath(component.gameObject)}.");
             }
             return changed;
         }
@@ -781,7 +783,7 @@ namespace WhyKnot.AvatarQol.Tools {
             if (verts.Length != mesh.vertexCount || bonesPerVertex.Length != mesh.vertexCount) return;
 
             int cursor = 0;
-            var path = AvatarQol.GetGameObjectPath(renderer.gameObject);
+            var path = PathUtility.GetGameObjectPath(renderer.gameObject);
             for (int v = 0; v < mesh.vertexCount; v++) {
                 int weightCount = bonesPerVertex[v];
                 var world = ComputeWorldPosition(verts[v], cursor, weightCount);

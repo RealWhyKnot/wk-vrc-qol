@@ -9,6 +9,8 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.MeshFixes.UI;
 
@@ -67,7 +69,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void OnGUI() {
             DrawTitleBar();
-            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Info,
+            WkStyles.Notice(NoticeKind.Info,
                 "This is a heavier physics-risk scan, so it checks one mesh at a time. Pick the mesh that actually moves from PhysBones, then scan.");
             DrawSetup();
             EditorGUILayout.Space(2);
@@ -83,7 +85,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 EditorGUILayout.LabelField(
                     new GUIContent("PhysBone Clipping Risks",
                         "Estimate whether one PhysBone-driven mesh has enough motion range to clip into itself or nearby surfaces."),
-                    AvatarQolStyles.SectionTitle);
+                    WkStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
                         new GUIContent("?", "Open the Avatar QoL wiki page for this tool in your browser."),
@@ -94,9 +96,9 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawSetup() {
-            using (AvatarQolStyles.Section("1. Moving mesh",
+            using (WkStyles.Section("1. Moving mesh",
                     "Pick the mesh that moves from PhysBones. The scan checks that mesh against itself and against any comparison meshes you add below.")) {
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Animator",
                         "The avatar Animator. The scan looks under this object for live VRCPhysBones and supported generated/custom PhysBone setup components."),
                     () => {
@@ -106,7 +108,7 @@ namespace WhyKnot.AvatarQol.Tools {
                             ClearResults();
                         }
                     });
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Mesh to check",
                         "The one SkinnedMeshRenderer to scan for PhysBone-driven vertices. Pick hair, tail, skirt, sleeves, or another mesh that moves from PhysBones."),
                     () => {
@@ -121,29 +123,29 @@ namespace WhyKnot.AvatarQol.Tools {
                     });
 
                 if (!PhysBoneClippingAnalyzer.SdkAvailable) {
-                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                    WkStyles.Notice(NoticeKind.Warning,
                         "VRChat SDK 3 PhysBone types are not available in this project, so this scan cannot run.");
                 } else if (_targetRenderer != null && (_targetRenderer.sharedMesh == null || !_targetRenderer.sharedMesh.isReadable)) {
-                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                    WkStyles.Notice(NoticeKind.Warning,
                         "The target mesh is not readable. Enable Read/Write on its model importer before scanning.");
                 } else if (_animator != null && _targetRenderer != null && !_targetRenderer.transform.IsChildOf(_animator.transform)) {
-                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                    WkStyles.Notice(NoticeKind.Warning,
                         "The target mesh is not under the selected Animator. The scan can still run, but PhysBone ownership may not match what you expect.");
                 }
             }
         }
 
         private void DrawTuning() {
-            using (AvatarQolStyles.Section("2. Comparison meshes",
+            using (WkStyles.Section("2. Comparison meshes",
                     "Add body, clothing, accessories, or any other readable SkinnedMeshRenderer that the moving mesh should not pass through.")) {
                 EditorGUILayout.LabelField(
                     "The moving mesh is always included, so self-clipping is checked even when this list is empty.",
-                    AvatarQolStyles.Muted);
+                    WkStyles.Muted);
                 DrawComparisonRendererList();
             }
 
             EditorGUILayout.Space(2);
-            using (AvatarQolStyles.Section("3. Scan options",
+            using (WkStyles.Section("3. Scan options",
                     "Defaults are tuned for a quick first pass. Raise the margin or lower the weight floor if you want a more sensitive scan.")) {
                 _verboseLog = EditorGUILayout.ToggleLeft(
                     new GUIContent("Verbose log",
@@ -154,15 +156,15 @@ namespace WhyKnot.AvatarQol.Tools {
                         "Draw orange markers on risky vertices and a line to the nearest surface sample."),
                     _showGizmos);
 
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Driven weight floor",
                         "A vertex must have at least this much weight to a PhysBone-driven transform before it is considered part of the moving surface."),
                     () => _weightFloor = EditorGUILayout.Slider(_weightFloor, 0.001f, 0.5f));
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Clearance margin",
                         "How much empty space nearby mesh should have before the motion envelope is considered risky. 0.025 m is 2.5 cm."),
                     () => _clearanceMargin = EditorGUILayout.Slider(_clearanceMargin, 0.005f, 0.15f));
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Max rows per PhysBone",
                         "Caps repeated warnings from one PhysBone so one skirt or hair chain does not flood the list."),
                     () => _maxIssuesPerPhysBone = EditorGUILayout.IntSlider(_maxIssuesPerPhysBone, 1, 25));
@@ -172,7 +174,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private void DrawScanBar() {
             using (new EditorGUILayout.HorizontalScope()) {
                 using (new EditorGUI.DisabledScope(!CanScan())) {
-                    if (AvatarQolStyles.PrimaryButtonInline(
+                    if (WkStyles.PrimaryButtonInline(
                             new GUIContent("Scan for clipping",
                                 "Run the PhysBone clipping-risk estimate for the moving mesh and the comparison meshes listed above."),
                             GUILayout.MinWidth(140))) {
@@ -213,7 +215,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 GUILayout.FlexibleSpace();
                 if (!string.IsNullOrEmpty(_scanSummary)) {
-                    EditorGUILayout.LabelField(_scanSummary, AvatarQolStyles.Muted);
+                    EditorGUILayout.LabelField(_scanSummary, WkStyles.Muted);
                 }
             }
         }
@@ -223,10 +225,10 @@ namespace WhyKnot.AvatarQol.Tools {
                 EditorGUILayout.LabelField(
                     new GUIContent(_issues.Count > 0 ? $"Risks ({_issues.Count})" : "Risks",
                         "Rows where the estimated PhysBone motion envelope reaches nearby mesh surface."),
-                    AvatarQolStyles.SubsectionTitle);
+                    WkStyles.SubsectionTitle);
                 GUILayout.FlexibleSpace();
                 if (_lastSurfaceRendererCount > 1) {
-                    EditorGUILayout.LabelField($"{_lastSurfaceRendererCount} surface meshes sampled", AvatarQolStyles.Muted, GUILayout.Width(170));
+                    EditorGUILayout.LabelField($"{_lastSurfaceRendererCount} surface meshes sampled", WkStyles.Muted, GUILayout.Width(170));
                 }
             }
 
@@ -239,7 +241,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 } else {
                     foreach (var issue in _issues) {
                         DrawIssueRow(issue);
-                        AvatarQolStyles.Divider();
+                        WkStyles.Divider();
                     }
                 }
                 EditorGUILayout.EndScrollView();
@@ -248,12 +250,12 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawIssueRow(PhysBoneClippingAnalyzer.Issue issue) {
             var severityColor = issue.Severity == PhysBoneClippingAnalyzer.Severity.High
-                ? AvatarQolStyles.CategoryHumanoid
-                : AvatarQolStyles.ColorWarning;
+                ? AvatarQolCategoryColors.Humanoid
+                : WkStyles.ColorWarning;
             var severityText = issue.Severity == PhysBoneClippingAnalyzer.Severity.High ? "high" : "medium";
             string boneName = issue.DrivenBone != null ? issue.DrivenBone.name : "(destroyed)";
             using (new EditorGUILayout.HorizontalScope()) {
-                AvatarQolStyles.BadgePill(severityText, severityColor,
+                WkStyles.BadgePill(severityText, severityColor,
                     issue.Severity == PhysBoneClippingAnalyzer.Severity.High
                         ? "No effective collider coverage or already-small clearance. This deserves attention."
                         : "Collider coverage exists or the estimated overlap is smaller, but the area is still worth checking.");
@@ -261,13 +263,13 @@ namespace WhyKnot.AvatarQol.Tools {
                     new GUIContent(
                         $"v#{issue.VertexIndex}  {boneName}  move~{issue.EstimatedMotion * 100f:0.0}cm  clearance {issue.Clearance * 100f:0.0}cm",
                         issue.Reason),
-                    AvatarQolStyles.Mono);
+                    WkStyles.Mono);
                 GUILayout.FlexibleSpace();
                 using (new EditorGUI.DisabledScope(!CanCreateMeshFix(issue))) {
                     if (GUILayout.Button(
                             new GUIContent("Mesh fix",
                                 "Create or update a stored Auto Mesh Fix component on the moving mesh object for this risk."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(66))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(66))) {
                         CreateMeshFixSetups(new[] { issue });
                     }
                 }
@@ -275,24 +277,24 @@ namespace WhyKnot.AvatarQol.Tools {
                     if (GUILayout.Button(
                             new GUIContent("Motion",
                                 "Immediate fallback: tighten this PhysBone source's motion settings. This does not create the stored mesh-fix component."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(58))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
                         ReduceMotion(new[] { issue });
                     }
                 }
                 using (new EditorGUI.DisabledScope(issue.Renderer == null)) {
                     if (GUILayout.Button(new GUIContent("Ping", "Ping the target renderer in the hierarchy."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(42))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(42))) {
                         Selection.activeObject = issue.Renderer;
                         EditorGUIUtility.PingObject(issue.Renderer);
                     }
                 }
                 if (GUILayout.Button(new GUIContent("Frame", "Frame the risky vertex in Scene view."),
-                        AvatarQolStyles.MiniRowButton, GUILayout.Width(48))) {
+                        WkStyles.MiniRowButton, GUILayout.Width(48))) {
                     Frame(issue.WorldPosition, 0.18f);
                 }
                 using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
                     if (GUILayout.Button(new GUIContent("Reveal", "Select and ping the PhysBone-driven transform."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(52))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(52))) {
                         Selection.activeObject = issue.DrivenBone;
                         EditorGUIUtility.PingObject(issue.DrivenBone);
                         FlashHighlight(issue.WorldPosition);
@@ -301,14 +303,14 @@ namespace WhyKnot.AvatarQol.Tools {
                     if (GUILayout.Button(
                             new GUIContent(isPreviewing ? "Stop" : "Wobble",
                                 "Temporarily wobble the driven transform so you can inspect likely clipping. This does not move the Scene camera."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(58))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
                         if (isPreviewing) StopPreview();
                         else StartPreview(issue.DrivenBone);
                     }
                 }
             }
-            EditorGUILayout.LabelField("   " + issue.Reason, AvatarQolStyles.Muted);
-            EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", AvatarQolStyles.Muted);
+            EditorGUILayout.LabelField("   " + issue.Reason, WkStyles.Muted);
+            EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", WkStyles.Muted);
         }
 
         private bool CanScan() {
@@ -343,7 +345,7 @@ namespace WhyKnot.AvatarQol.Tools {
             _lastSurfaceRendererCount = surfaces.Count;
             var log = _verboseLog ? new StringBuilder() : null;
             log?.AppendLine("[Avatar QoL] PhysBone Clipping Risks verbose log");
-            log?.AppendLine($"  target={AvatarQol.GetGameObjectPath(_targetRenderer.gameObject)}");
+            log?.AppendLine($"  target={PathUtility.GetGameObjectPath(_targetRenderer.gameObject)}");
             log?.AppendLine($"  comparisonRenderers={surfaces.Count - 1}, surfaceRenderers={surfaces.Count}");
             log?.AppendLine($"  weightFloor={_weightFloor:F4}, clearanceMargin={_clearanceMargin:F3}, maxIssuesPerPhysBone={_maxIssuesPerPhysBone}");
 
@@ -440,10 +442,10 @@ namespace WhyKnot.AvatarQol.Tools {
             }
 
             if (_comparisonRenderers.Count == 0) {
-                EditorGUILayout.LabelField("No extra comparison meshes. The scan will check the moving mesh against itself.", AvatarQolStyles.Muted);
+                EditorGUILayout.LabelField("No extra comparison meshes. The scan will check the moving mesh against itself.", WkStyles.Muted);
             }
             if (unreadableCount > 0) {
-                AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                WkStyles.Notice(NoticeKind.Warning,
                     $"{unreadableCount} comparison mesh(es) are not readable and will be skipped. Enable Read/Write on those model imports to include them.");
             }
         }
@@ -533,7 +535,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 MeshFixWindow.Open(lastSetup);
                 _scanSummary =
                     $"Stored mesh fix setup(s): {created} created, {updated} updated, {kept} kept. " +
-                    $"Selected {AvatarQol.GetGameObjectPath(lastSetup.gameObject)}.";
+                    $"Selected {PathUtility.GetGameObjectPath(lastSetup.gameObject)}.";
                 if (skipped > 0) _scanSummary += $" Skipped {skipped} self-clipping row(s).";
             } else {
                 _scanSummary = "No Auto Mesh Fix setup could be created from the selected risk rows.";
@@ -586,7 +588,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private static bool LooksLikeBodyRenderer(SkinnedMeshRenderer renderer) {
             if (renderer == null) return false;
-            var text = (AvatarQol.GetGameObjectPath(renderer.gameObject) + " " +
+            var text = (PathUtility.GetGameObjectPath(renderer.gameObject) + " " +
                         renderer.name + " " +
                         (renderer.sharedMesh != null ? renderer.sharedMesh.name : string.Empty)).ToLowerInvariant();
             return text.Contains("body") ||

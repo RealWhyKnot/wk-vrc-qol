@@ -3,6 +3,7 @@
     "rootNamespace": "WhyKnot.AvatarQol",
     "references": [
         "dev.whyknot.avatar-qol.Runtime",
+        "dev.whyknot.core.Editor",
         "VRC.SDKBase.Editor.BuildPipeline",
         "VRC.SDKBase.Editor",
         "VRC.SDK3.Dynamics.PhysBone",

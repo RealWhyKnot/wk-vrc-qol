@@ -8,6 +8,8 @@
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.MeshFixes.Lifecycle;
 
@@ -28,7 +30,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
             serializedObject.Update();
 
             var controller = (WhyKnotMeshFixController)target;
-            EditorGUILayout.LabelField("Avatar QoL - Mesh Fix Controller", AvatarQolStyles.SubsectionTitle);
+            EditorGUILayout.LabelField("Avatar QoL - Mesh Fix Controller", WkStyles.SubsectionTitle);
             EditorGUILayout.HelpBox(
                 "Optional coordinator for the mesh-fix pipeline. The pipeline still works without it; this component just lets you flip avatar-wide options in one place and exposes a count of stored fixes.",
                 MessageType.Info);
@@ -67,14 +69,14 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
             var setups = controller.gameObject.GetComponentsInChildren<AutoTightenToBody>(true)
                 .Where(s => s != null)
                 .ToList();
-            EditorGUILayout.LabelField($"Stored Auto Tighten To Body setups: {setups.Count}", AvatarQolStyles.Body);
+            EditorGUILayout.LabelField($"Stored Auto Tighten To Body setups: {setups.Count}", WkStyles.Body);
             foreach (var setup in setups) {
                 using (new EditorGUILayout.HorizontalScope()) {
                     GUILayout.Space(8);
                     var label = setup.garmentRenderer != null && setup.bodyRenderer != null
                         ? $"{setup.garmentRenderer.name} -> {setup.bodyRenderer.name}"
                         : $"{setup.name} (incomplete)";
-                    EditorGUILayout.LabelField(label, AvatarQolStyles.Muted);
+                    EditorGUILayout.LabelField(label, WkStyles.Muted);
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button("Ping", EditorStyles.miniButton, GUILayout.Width(44))) {
                         Selection.activeObject = setup.gameObject;

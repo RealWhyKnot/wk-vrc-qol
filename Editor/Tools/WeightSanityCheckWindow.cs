@@ -57,6 +57,8 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 
@@ -162,7 +164,7 @@ namespace WhyKnot.AvatarQol.Tools {
             // a half-skipped scan.
             if (_nonReadableRenderers.Count > 0) DrawNonReadableBanner();
             DrawTitleBar();
-            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Info,
+            WkStyles.Notice(NoticeKind.Info,
                 "Flow: pick the avatar Animator, scan, review weight rows, then fix or tune what matters. PhysBone clipping has its own window so this scan stays fast.");
             DrawHeader();
             EditorGUILayout.Space(2);
@@ -178,7 +180,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 EditorGUILayout.LabelField(
                     new GUIContent("Weight Sanity Check",
                         "Find mesh weights that pull part of the avatar toward the wrong left/right side, then review or fix them."),
-                    AvatarQolStyles.SectionTitle);
+                    WkStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
                         new GUIContent("?", "Open the Avatar QoL wiki page for this tool in your browser."),
@@ -189,9 +191,9 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawHeader() {
-            using (AvatarQolStyles.Section("1. Pick avatar",
+            using (WkStyles.Section("1. Pick avatar",
                     "Choose the Humanoid avatar to scan. Optionally narrow the scan to one renderer while debugging an outfit or mesh.")) {
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Animator",
                         "The Humanoid Animator at the root of your avatar. The scan walks every SkinnedMeshRenderer underneath it and uses the Humanoid bone bindings (Hips, LeftUpperLeg, RightUpperLeg) to derive the avatar's left/right axis. Generic / non-Humanoid rigs aren't supported."),
                     () => {
@@ -199,10 +201,10 @@ namespace WhyKnot.AvatarQol.Tools {
                         if (newAnim != _animator) { _animator = newAnim; _issues.Clear(); _scanSummary = ""; }
                     });
                 if (_animator != null && !_animator.isHuman) {
-                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                    WkStyles.Notice(NoticeKind.Warning,
                         "Animator is not Humanoid. The symmetry check needs Humanoid bone bindings (LeftUpperLeg, RightUpperLeg, Hips).");
                 }
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Only scan renderer",
                         "Optional. When set, Scan only walks this single SkinnedMeshRenderer instead of every renderer under the avatar. Useful when debugging one outfit / mesh without touching the exclusion list. Auto-fills the Inspect Vertex renderer below."),
                     () => {
@@ -214,7 +216,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     });
                 if (_animator != null && _limitToRenderer != null
                         && !_limitToRenderer.transform.IsChildOf(_animator.transform)) {
-                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                    WkStyles.Notice(NoticeKind.Warning,
                         "The 'Limit scan to' renderer is not a descendant of the picked Animator. The scan will still run on it, but side classification uses the Animator's Hips so it may misbehave for renderers parented elsewhere.");
                 }
             }
@@ -224,7 +226,7 @@ namespace WhyKnot.AvatarQol.Tools {
             _advancedOpen = EditorGUILayout.Foldout(_advancedOpen,
                 new GUIContent("Advanced",
                     "Detection thresholds, exclusion list, diagnostics (verbose log, gizmos), and the per-vertex inspector. Folded by default — most users only need Animator + Scan + Fix all."),
-                true, AvatarQolStyles.FoldoutHeader);
+                true, WkStyles.FoldoutHeader);
             if (!_advancedOpen) return;
             DrawTunables();
             EditorGUILayout.Space(2);
@@ -234,13 +236,13 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawTunables() {
-            using (AvatarQolStyles.Section("Detection thresholds",
+            using (WkStyles.Section("Detection thresholds",
                     "Knobs that control how aggressive the scanner is. Sensible defaults; tune only when the issue list is too noisy or too quiet.")) {
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Weight floor",
                         "Weights below this are ignored as noise. Range 0–0.5; 0.005 ≈ 0.5% influence per vertex. Raise toward 0.02 if you see false positives; lower toward 0.001 if real bleed (≤ 0.005) is being missed."),
                     () => _weightFloor = EditorGUILayout.Slider(_weightFloor, 0f, 0.5f));
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Center margin",
                         "Half-width of the centre stripe in metres, in Hips local X. Vertices within ±this distance of the spine count as Center, not Left/Right. 0–0.2 m. 0.02 m ≈ 2 cm. Increase if shoulder/clavicle vertices keep getting flagged; decrease if real cross-side bleed near the spine is being missed."),
                     () => _centerMargin = EditorGUILayout.Slider(_centerMargin, 0f, 0.2f));
@@ -251,7 +253,7 @@ namespace WhyKnot.AvatarQol.Tools {
                         _scanCenterBand, GUILayout.Width(220));
                 }
                 if (_scanCenterBand) {
-                    AvatarQolStyles.LabeledField(
+                    WkStyles.LabeledField(
                         new GUIContent("Centre threshold",
                             "Minimum weight a centre-stripe vertex must have to a Left or Right bone before it's flagged. Higher than the regular floor because small bleed near the spine is usually fine."),
                         () => _centerCrossSideFloor = EditorGUILayout.Slider(_centerCrossSideFloor, 0f, 0.5f));
@@ -260,7 +262,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawDiagnostics() {
-            using (AvatarQolStyles.Section("Diagnostics",
+            using (WkStyles.Section("Diagnostics",
                     "Visualisation, logging, and the per-vertex Inspect tool. Helpful when the scan isn't flagging something you expected, or when triaging hundreds of issues.")) {
                 using (new EditorGUILayout.HorizontalScope()) {
                     _showGizmos = EditorGUILayout.ToggleLeft(
@@ -275,7 +277,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 EditorGUILayout.Space(4);
                 DrawVertexInspector();
                 if (_showConsoleNoticeAfterInspect) {
-                    if (AvatarQolStyles.ConsoleResultNotice("Inspect output")) {
+                    if (WkStyles.ConsoleResultNotice("Inspect output")) {
                         EditorApplication.ExecuteMenuItem("Window/General/Console");
                         _showConsoleNoticeAfterInspect = false;
                     }
@@ -288,7 +290,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     DumpSelectedRendererWeights();
                 }
                 if (_showConsoleNoticeAfterDump) {
-                    if (AvatarQolStyles.ConsoleResultNotice("Weight dump")) {
+                    if (WkStyles.ConsoleResultNotice("Weight dump")) {
                         EditorApplication.ExecuteMenuItem("Window/General/Console");
                         _showConsoleNoticeAfterDump = false;
                     }
@@ -297,7 +299,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawExclusions() {
-            using (AvatarQolStyles.Section("Exclude renderers (legit cross-side)",
+            using (WkStyles.Section("Exclude renderers (legit cross-side)",
                     "Add any SkinnedMeshRenderer that bridges left/right by design (capes, dresses, tails). They won't be scanned.")) {
                 if (_excludedRenderers.Count == 0) {
                     EditorGUILayout.LabelField("(none)", EditorStyles.centeredGreyMiniLabel);
@@ -325,7 +327,7 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 bool canScan = _animator != null && _animator.isHuman;
                 using (new EditorGUI.DisabledScope(!canScan)) {
-                    if (AvatarQolStyles.PrimaryButtonInline(
+                    if (WkStyles.PrimaryButtonInline(
                             new GUIContent("Scan",
                                 "Walk every SkinnedMeshRenderer under the Animator (or just the renderer selected above) and flag vertices weighted to a bone on the avatar's opposite side. Run again any time after a fix to refresh."),
                             GUILayout.MinWidth(140))) Scan();
@@ -340,7 +342,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 GUILayout.FlexibleSpace();
                 if (!string.IsNullOrEmpty(_scanSummary)) {
-                    EditorGUILayout.LabelField(_scanSummary, AvatarQolStyles.Muted);
+                    EditorGUILayout.LabelField(_scanSummary, WkStyles.Muted);
                 }
             }
         }
@@ -352,10 +354,10 @@ namespace WhyKnot.AvatarQol.Tools {
                 EditorGUILayout.LabelField(
                     new GUIContent(_issues.Count > 0 ? $"Issues ({_issues.Count})" : "Issues",
                         "Step 3. Each row is one suspicious bone weight on one vertex. The bracketed tag shows confidence: [humanoid] = bone is on the wrong Humanoid side, [spatial] = inferred from world position, [center] = mid-line bleed."),
-                    AvatarQolStyles.SubsectionTitle);
+                    WkStyles.SubsectionTitle);
                 GUILayout.FlexibleSpace();
                 using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
-                    if (AvatarQolStyles.PrimaryButtonInline(
+                    if (WkStyles.PrimaryButtonInline(
                             new GUIContent($"Fix all ({_issues.Count})",
                                 "Apply fixes to every issue currently in the list. Each weight is redirected to its matching left/right Humanoid bone when one exists, otherwise it is removed and the remaining weights on that vertex are scaled up. FBX meshes are cloned first; the original FBX is never modified."),
                             GUILayout.Width(150))) {
@@ -376,12 +378,12 @@ namespace WhyKnot.AvatarQol.Tools {
             // Inline legend so the bracket tags aren't mystery jargon.
             if (_issues.Count > 0) {
                 using (new EditorGUILayout.HorizontalScope()) {
-                    EditorGUILayout.LabelField("Legend:", AvatarQolStyles.Muted, GUILayout.Width(54));
-                    AvatarQolStyles.BadgePill("humanoid", AvatarQolStyles.CategoryHumanoid,
+                    EditorGUILayout.LabelField("Legend:", WkStyles.Muted, GUILayout.Width(54));
+                    WkStyles.BadgePill("humanoid", AvatarQolCategoryColors.Humanoid,
                         "Bone has a Humanoid ancestor on the avatar's opposite side from the vertex. Highest-confidence flag.");
-                    AvatarQolStyles.BadgePill("spatial", AvatarQolStyles.CategorySpatial,
+                    WkStyles.BadgePill("spatial", AvatarQolCategoryColors.Spatial,
                         "Bone has no Humanoid ancestor; its world pivot sits on the opposite side of the vertex.");
-                    AvatarQolStyles.BadgePill("center", AvatarQolStyles.CategoryCenter,
+                    WkStyles.BadgePill("center", AvatarQolCategoryColors.Center,
                         "Vertex is in the centre stripe; a Left or Right bone exceeded the higher centre threshold.");
                     GUILayout.FlexibleSpace();
                 }
@@ -413,7 +415,7 @@ namespace WhyKnot.AvatarQol.Tools {
                                 bool now = EditorGUILayout.Foldout(!currentCollapsed,
                                     new GUIContent($"{i.RendererPath}  —  {count} issue(s)" + (i.Renderer == null ? "  (renderer destroyed)" : ""),
                                         "Click to collapse all issues from this renderer. Useful when one mesh has hundreds of issues you've already triaged."),
-                                    true, AvatarQolStyles.FoldoutHeader);
+                                    true, WkStyles.FoldoutHeader);
                                 bool nowCollapsed = !now;
                                 if (nowCollapsed != currentCollapsed) {
                                     if (nowCollapsed) _collapsedRenderers.Add(i.RendererPath);
@@ -434,13 +436,13 @@ namespace WhyKnot.AvatarQol.Tools {
 #if false
         private void DrawPhysBoneIssueRow(PhysBoneClippingAnalyzer.Issue issue) {
             var severityColor = issue.Severity == PhysBoneClippingAnalyzer.Severity.High
-                ? AvatarQolStyles.CategoryHumanoid
-                : AvatarQolStyles.ColorWarning;
+                ? AvatarQolCategoryColors.Humanoid
+                : WkStyles.ColorWarning;
             var severityText = issue.Severity == PhysBoneClippingAnalyzer.Severity.High ? "high" : "medium";
             string boneName = issue.DrivenBone != null ? issue.DrivenBone.name : "(destroyed)";
             using (new EditorGUILayout.HorizontalScope()) {
                 GUILayout.Space(6);
-                AvatarQolStyles.BadgePill(severityText, severityColor,
+                WkStyles.BadgePill(severityText, severityColor,
                     issue.Severity == PhysBoneClippingAnalyzer.Severity.High
                         ? "No effective collider coverage or already-small clearance. This deserves attention."
                         : "Collider coverage exists or the estimated overlap is smaller, but the area is still worth checking.");
@@ -448,17 +450,17 @@ namespace WhyKnot.AvatarQol.Tools {
                     new GUIContent(
                         $"{issue.RendererPath}  v#{issue.VertexIndex}  {boneName}  move~{issue.EstimatedMotion * 100f:0.0}cm  clearance {issue.Clearance * 100f:0.0}cm",
                         issue.Reason),
-                    AvatarQolStyles.Mono);
+                    WkStyles.Mono);
                 GUILayout.FlexibleSpace();
                 using (new EditorGUI.DisabledScope(issue.Renderer == null)) {
                     if (GUILayout.Button(new GUIContent("P", "Ping the renderer in the hierarchy."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(22))) {
                         Selection.activeObject = issue.Renderer;
                         EditorGUIUtility.PingObject(issue.Renderer);
                     }
                 }
                 if (GUILayout.Button(new GUIContent("F", "Frame the risky vertex in the Scene view."),
-                        AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                        WkStyles.MiniRowButton, GUILayout.Width(22))) {
                     var sv = SceneView.lastActiveSceneView;
                     if (sv != null) {
                         sv.LookAt(issue.WorldPosition, sv.rotation, 0.18f);
@@ -467,7 +469,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
                     if (GUILayout.Button(new GUIContent("R", "Reveal the PhysBone-driven transform."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(22))) {
                         Selection.activeObject = issue.DrivenBone;
                         EditorGUIUtility.PingObject(issue.DrivenBone);
                         FlashHighlight(issue.WorldPosition);
@@ -475,14 +477,14 @@ namespace WhyKnot.AvatarQol.Tools {
                     bool isPreviewing = _previewBone == issue.DrivenBone && issue.DrivenBone != null;
                     if (GUILayout.Button(new GUIContent(isPreviewing ? "Stop" : "Wobble",
                             "Temporarily wobble the driven transform so you can inspect likely clipping. This does not move the Scene camera."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(58))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
                         if (isPreviewing) StopPreview();
                         else StartPreview(issue.DrivenBone);
                     }
                 }
             }
-            EditorGUILayout.LabelField("   " + issue.Reason, AvatarQolStyles.Muted);
-            EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", AvatarQolStyles.Muted);
+            EditorGUILayout.LabelField("   " + issue.Reason, WkStyles.Muted);
+            EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", WkStyles.Muted);
         }
 
 #endif
@@ -491,19 +493,19 @@ namespace WhyKnot.AvatarQol.Tools {
             Color tag; string tagText; string tagTooltip;
             switch (i.Category) {
                 case IssueCategory.HumanoidCrossSide:
-                    tag = AvatarQolStyles.CategoryHumanoid; tagText = "humanoid";
+                    tag = AvatarQolCategoryColors.Humanoid; tagText = "humanoid";
                     tagTooltip = "Bone has a Humanoid ancestor on the avatar's opposite side from the vertex. Highest-confidence flag.";
                     break;
                 case IssueCategory.SpatialCrossSide:
-                    tag = AvatarQolStyles.CategorySpatial; tagText = "spatial";
+                    tag = AvatarQolCategoryColors.Spatial; tagText = "spatial";
                     tagTooltip = "Bone has no Humanoid ancestor; its world pivot sits on the opposite side of the vertex.";
                     break;
                 case IssueCategory.CenterBandSideBleed:
-                    tag = AvatarQolStyles.CategoryCenter; tagText = "center";
+                    tag = AvatarQolCategoryColors.Center; tagText = "center";
                     tagTooltip = "Vertex is in the centre stripe; a Left or Right bone exceeded the higher centre threshold.";
                     break;
                 default:
-                    tag = AvatarQolStyles.ColorInfo; tagText = "?"; tagTooltip = ""; break;
+                    tag = WkStyles.ColorInfo; tagText = "?"; tagTooltip = ""; break;
             }
             bool expanded = _expandedIssueRows.Contains(issueIndex);
 
@@ -515,16 +517,16 @@ namespace WhyKnot.AvatarQol.Tools {
                     if (now) _expandedIssueRows.Add(issueIndex);
                     else _expandedIssueRows.Remove(issueIndex);
                 }
-                AvatarQolStyles.BadgePill(tagText, tag, tagTooltip);
+                WkStyles.BadgePill(tagText, tag, tagTooltip);
                 EditorGUILayout.LabelField(
                     new GUIContent($"v#{i.VertexIndex}  {i.VertexSide} → {boneName} ({i.BoneSide})  w={i.Weight:F3}",
                         $"Vertex #{i.VertexIndex} on the avatar's {i.VertexSide} side has weight {i.Weight:F3} on {boneName}, which is classified {i.BoneSide}. Click ∨ for the world position; use the row buttons to investigate or fix."),
-                    AvatarQolStyles.Mono);
+                    WkStyles.Mono);
                 GUILayout.FlexibleSpace();
 
                 using (new EditorGUI.DisabledScope(i.Renderer == null)) {
                     if (GUILayout.Button(new GUIContent("P", "Ping the renderer in the hierarchy."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(22))) {
                         if (i.Renderer != null) {
                             Selection.activeObject = i.Renderer;
                             EditorGUIUtility.PingObject(i.Renderer);
@@ -532,7 +534,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     }
                 }
                 if (GUILayout.Button(new GUIContent("F", "Frame: move Scene camera to the vertex."),
-                        AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                        WkStyles.MiniRowButton, GUILayout.Width(22))) {
                     var sv = SceneView.lastActiveSceneView;
                     if (sv != null) {
                         sv.LookAt(i.WorldPosition, sv.rotation, 0.15f);
@@ -542,7 +544,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 using (new EditorGUI.DisabledScope(i.OffendingBone == null)) {
                     if (GUILayout.Button(new GUIContent("R",
                             "Reveal: select the offending bone, frame the vertex, and flash a marker disc in the Scene view for two seconds."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(22))) {
                         Selection.activeObject = i.OffendingBone;
                         EditorGUIUtility.PingObject(i.OffendingBone);
                         var sv = SceneView.lastActiveSceneView;
@@ -552,7 +554,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     bool isPreviewing = _previewBone == i.OffendingBone && i.OffendingBone != null;
                     if (GUILayout.Button(new GUIContent(isPreviewing ? "Stop" : "Wobble",
                             "Temporarily wobble the offending bone so you can see how the bad weights deform the mesh. This does not move the Scene camera."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(58))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
                         if (isPreviewing) StopPreview();
                         else if (i.OffendingBone != null) StartPreview(i.OffendingBone);
                     }
@@ -560,14 +562,14 @@ namespace WhyKnot.AvatarQol.Tools {
                 using (new EditorGUI.DisabledScope(i.Renderer == null || i.OffendingBone == null)) {
                     if (GUILayout.Button(new GUIContent("?",
                             "Why? Send this vertex to the Inspect Vertex panel and run a per-weight verdict — useful for understanding why a related weight didn't flag. Result prints to the Unity console."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(22))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(22))) {
                         _inspectRenderer = i.Renderer;
                         _inspectVertexIndex = i.VertexIndex;
                         InspectVertex();
                     }
                     if (GUILayout.Button(new GUIContent("Fix",
                             "Redirect this offending weight to the bone's Humanoid mirror (e.g. RightUpperLeg → LeftUpperLeg). When no mirror is available, zero the weight and renormalise the rest. FBX-imported meshes are cloned to an editable .mesh in Assets/AvatarQol Generated/ before any change."),
-                            AvatarQolStyles.MiniRowButton, GUILayout.Width(34))) {
+                            WkStyles.MiniRowButton, GUILayout.Width(34))) {
                         var name = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
                         FixIssues(new List<Issue> { i }, $"weight on {name}");
                     }
@@ -576,10 +578,10 @@ namespace WhyKnot.AvatarQol.Tools {
             if (expanded) {
                 EditorGUILayout.LabelField(
                     $"   world pos:  ({i.WorldPosition.x:F4}, {i.WorldPosition.y:F4}, {i.WorldPosition.z:F4})",
-                    AvatarQolStyles.Muted);
+                    WkStyles.Muted);
                 EditorGUILayout.LabelField(
-                    $"   bone path:  {(i.OffendingBone != null ? AvatarQol.GetGameObjectPath(i.OffendingBone.gameObject) : "(destroyed)")}",
-                    AvatarQolStyles.Muted);
+                    $"   bone path:  {(i.OffendingBone != null ? PathUtility.GetGameObjectPath(i.OffendingBone.gameObject) : "(destroyed)")}",
+                    WkStyles.Muted);
             }
         }
 
@@ -596,7 +598,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawNonReadableBanner() {
             if (_nonReadableRenderers.Count == 0) return;
-            if (AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+            if (WkStyles.Notice(NoticeKind.Warning,
                     $"{_nonReadableRenderers.Count} renderer(s) skipped — mesh has Read/Write disabled in importer.",
                     "Enable Read/Write & rescan",
                     "For every skipped renderer, find its source asset, set Read/Write Enabled in the model importer, reimport, then re-run the scan.")) {
@@ -741,7 +743,7 @@ namespace WhyKnot.AvatarQol.Tools {
             float floor = isCenter ? _centerCrossSideFloor : _weightFloor;
 
             var sb = new StringBuilder();
-            sb.AppendLine($"[Avatar QoL] Inspect vertex #{_inspectVertexIndex} of {AvatarQol.GetGameObjectPath(smr.gameObject)}");
+            sb.AppendLine($"[Avatar QoL] Inspect vertex #{_inspectVertexIndex} of {PathUtility.GetGameObjectPath(smr.gameObject)}");
             sb.AppendLine($"  world pos: ({worldPos.x:F4}, {worldPos.y:F4}, {worldPos.z:F4})  {anchorDesc}");
             sb.AppendLine($"  vertex side: {vertexSide} (isCenter={isCenter}, applicable floor={floor:F4})");
             sb.AppendLine($"  weights ({wCount}):");
@@ -808,13 +810,13 @@ namespace WhyKnot.AvatarQol.Tools {
             globalLog?.AppendLine($"  weightFloor={_weightFloor:F4}, centerMargin={_centerMargin:F3}, scanCenterBand={_scanCenterBand}, centerCrossSideFloor={_centerCrossSideFloor:F3}");
             globalLog?.AppendLine($"  avatar={_animator.gameObject.name}, leftSign={sideMap.LeftSignInHipsLocal}");
             if (_limitToRenderer != null) {
-                globalLog?.AppendLine($"  filter: limit-to-renderer={AvatarQol.GetGameObjectPath(_limitToRenderer.gameObject)}");
+                globalLog?.AppendLine($"  filter: limit-to-renderer={PathUtility.GetGameObjectPath(_limitToRenderer.gameObject)}");
             }
 
             foreach (var r in renderers) {
                 if (r == null || r.sharedMesh == null) continue;
                 if (_excludedRenderers.Contains(r)) {
-                    globalLog?.AppendLine($"  SKIP renderer (excluded): {AvatarQol.GetGameObjectPath(r.gameObject)}");
+                    globalLog?.AppendLine($"  SKIP renderer (excluded): {PathUtility.GetGameObjectPath(r.gameObject)}");
                     continue;
                 }
                 verticesScanned += ScanRenderer(r, sideMap, globalLog);
@@ -844,7 +846,7 @@ namespace WhyKnot.AvatarQol.Tools {
             if (mesh == null) return 0;
             var bones = renderer.bones;
             if (bones == null || bones.Length == 0) {
-                log?.AppendLine($"  SKIP renderer (no bones array): {AvatarQol.GetGameObjectPath(renderer.gameObject)}");
+                log?.AppendLine($"  SKIP renderer (no bones array): {PathUtility.GetGameObjectPath(renderer.gameObject)}");
                 return 0;
             }
             if (!mesh.isReadable) {
@@ -852,7 +854,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 // many renderers are silently being skipped. Actionable
                 // remediation lives in the "Enable Read/Write" UX next to the
                 // scan output.
-                log?.AppendLine($"  SKIP renderer (mesh not readable; enable Read/Write in the model importer): {AvatarQol.GetGameObjectPath(renderer.gameObject)}");
+                log?.AppendLine($"  SKIP renderer (mesh not readable; enable Read/Write in the model importer): {PathUtility.GetGameObjectPath(renderer.gameObject)}");
                 _nonReadableRenderers.Add(renderer);
                 return 0;
             }
@@ -882,7 +884,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     case BoneSide.Unknown: countUnknown++; break;
                 }
             }
-            log?.AppendLine($"  RENDER {AvatarQol.GetGameObjectPath(renderer.gameObject)}: " +
+            log?.AppendLine($"  RENDER {PathUtility.GetGameObjectPath(renderer.gameObject)}: " +
                             $"{bones.Length} bones (L={countLeft} R={countRight} C={countCenter} U={countUnknown}; " +
                             $"{countSpatial} of those by spatial fallback)");
             if (countLeft == 0 || countRight == 0) {
@@ -987,7 +989,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     }
                     _issues.Add(new Issue {
                         Renderer       = renderer,
-                        RendererPath   = AvatarQol.GetGameObjectPath(renderer.gameObject),
+                        RendererPath   = PathUtility.GetGameObjectPath(renderer.gameObject),
                         VertexIndex    = v,
                         WorldPosition  = worldPos,
                         VertexSide     = vertexSide,
@@ -1037,7 +1039,7 @@ namespace WhyKnot.AvatarQol.Tools {
             var weights = mesh.GetAllBoneWeights();
             var bonesPerVertex = mesh.GetBonesPerVertex();
             var sb = new StringBuilder();
-            sb.AppendLine($"[Avatar QoL] Weight dump for {AvatarQol.GetGameObjectPath(smr.gameObject)}");
+            sb.AppendLine($"[Avatar QoL] Weight dump for {PathUtility.GetGameObjectPath(smr.gameObject)}");
             sb.AppendLine($"  vertices={mesh.vertexCount}, bones={bones.Length}");
 
             // First, list every bone with its classification — handy when

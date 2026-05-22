@@ -15,10 +15,12 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.MeshFixes.Lifecycle;
 using WhyKnot.AvatarQol.MeshFixes.Pipeline;
-// Brings AvatarQol.GetGameObjectPath() in scope; C# does not implicitly
+// Brings PathUtility.GetGameObjectPath() in scope; C# does not implicitly
 // import a child namespace's parent.
 using WhyKnot.AvatarQol;
 
@@ -56,7 +58,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
 
         private void OnGUI() {
             DrawTitleBar();
-            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Info,
+            WkStyles.Notice(NoticeKind.Info,
                 "Setups are stored on small editor-only components on each clothing object so Blender re-exports do not wipe them.");
 
             DrawAvatarPicker();
@@ -80,7 +82,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
                 EditorGUILayout.LabelField(
                     new GUIContent("Auto Mesh Fixes",
                         "Nondestructive garment-tighten and body-hide blendshapes. Generated during preview, play mode, and upload."),
-                    AvatarQolStyles.SectionTitle);
+                    WkStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
                         new GUIContent("?", "Open the Avatar QoL wiki page for this tool in your browser."),
@@ -91,8 +93,8 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
         }
 
         private void DrawAvatarPicker() {
-            using (AvatarQolStyles.Section("1. Avatar")) {
-                AvatarQolStyles.LabeledField(
+            using (WkStyles.Section("1. Avatar")) {
+                WkStyles.LabeledField(
                     new GUIContent("Avatar", "The avatar that owns the clothing and body meshes."),
                     () => {
                         var next = (Animator)EditorGUILayout.ObjectField(_avatar, typeof(Animator), true);
@@ -105,7 +107,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
                     });
 
                 if (_avatar == null) {
-                    AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning,
+                    WkStyles.Notice(NoticeKind.Warning,
                         "Choose the avatar Animator first. Then add one setup per clothing mesh.");
                 }
             }
@@ -120,13 +122,13 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
                         if (GUILayout.Button(
                                 new GUIContent("Stop Previewing",
                                     "Restore the original avatar visibility and remove the generated preview copy."),
-                                AvatarQolStyles.PrimaryButton,
+                                WkStyles.PrimaryButton,
                                 GUILayout.Width(150))) {
                             MeshFixPreviewController.StopPreview();
                             _lastMessage = "Preview stopped.";
                         }
                         GUI.backgroundColor = prev;
-                    } else if (AvatarQolStyles.PrimaryButtonInline(
+                    } else if (WkStyles.PrimaryButtonInline(
                                    new GUIContent("Preview",
                                        "Hide the current avatar and show a temporary processed copy. This does not move your Scene view."),
                                    GUILayout.Width(120))) {
@@ -150,7 +152,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
 
                 GUILayout.FlexibleSpace();
                 if (!string.IsNullOrEmpty(_lastMessage)) {
-                    EditorGUILayout.LabelField(_lastMessage, AvatarQolStyles.Muted);
+                    EditorGUILayout.LabelField(_lastMessage, WkStyles.Muted);
                 }
             }
         }
@@ -158,13 +160,13 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
         // ---- Add new setup ----------------------------------------------
 
         private void DrawCreateSetup() {
-            using (AvatarQolStyles.Section("2. Add clothing fix",
+            using (WkStyles.Section("2. Add clothing fix",
                     "Pick one clothing mesh and the body mesh it should fit against. The setup is stored on the clothing object.")) {
                 using (new EditorGUI.DisabledScope(_avatar == null)) {
-                    AvatarQolStyles.LabeledField(
+                    WkStyles.LabeledField(
                         new GUIContent("Clothing mesh", "The clothing, accessory, or garment mesh to tighten."),
                         () => _newGarment = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_newGarment, typeof(SkinnedMeshRenderer), true));
-                    AvatarQolStyles.LabeledField(
+                    WkStyles.LabeledField(
                         new GUIContent("Body mesh", "The body mesh to project toward and optionally hide under the clothing."),
                         () => _newBody = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_newBody, typeof(SkinnedMeshRenderer), true));
 
@@ -178,7 +180,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
                     }
 
                     if (_newBody == null && _avatar != null) {
-                        EditorGUILayout.LabelField("Tip: drag the avatar body mesh into Body mesh. It is usually named Body, BodyMesh, or BaseBody.", AvatarQolStyles.Muted);
+                        EditorGUILayout.LabelField("Tip: drag the avatar body mesh into Body mesh. It is usually named Body, BodyMesh, or BaseBody.", WkStyles.Muted);
                     }
                 }
             }
@@ -187,7 +189,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
         // ---- Stored setups list -----------------------------------------
 
         private void DrawStoredSetups() {
-            using (AvatarQolStyles.Section("3. Stored fixes",
+            using (WkStyles.Section("3. Stored fixes",
                     "Editor-only components that generate temporary blendshapes during preview, play mode, and upload.")) {
                 var setups = GetSetups();
                 if (setups.Count == 0) {
@@ -197,7 +199,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
 
                 foreach (var setup in setups) {
                     DrawSetupCard(setup);
-                    AvatarQolStyles.Divider();
+                    WkStyles.Divider();
                 }
             }
         }
@@ -215,7 +217,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox)) {
                 using (new EditorGUILayout.HorizontalScope()) {
-                    EditorGUILayout.LabelField(title, AvatarQolStyles.SubsectionTitle);
+                    EditorGUILayout.LabelField(title, WkStyles.SubsectionTitle);
                     GUILayout.FlexibleSpace();
                     if (GUILayout.Button(new GUIContent("Select", "Select the stored setup component."), EditorStyles.miniButton, GUILayout.Width(52))) {
                         Selection.activeObject = setup.gameObject;
@@ -253,7 +255,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
                     BodyHideModeField(so.FindProperty("bodyHideMode"));
                 }
 
-                bool nextAdvancedOpen = EditorGUILayout.Foldout(isAdvancedOpen, "Advanced", true, AvatarQolStyles.FoldoutHeader);
+                bool nextAdvancedOpen = EditorGUILayout.Foldout(isAdvancedOpen, "Advanced", true, WkStyles.FoldoutHeader);
                 if (nextAdvancedOpen != isAdvancedOpen) SessionState.SetBool(foldoutKey, nextAdvancedOpen);
                 if (nextAdvancedOpen) {
                     SelectionModeField(so.FindProperty("selectionMode"));
@@ -283,7 +285,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
                 EditorGUILayout.LabelField(
                     new GUIContent($"{role} mesh is not readable.",
                         "Auto Mesh Fixes needs Read/Write enabled on the source model import. Click Fix to flip it and reimport."),
-                    AvatarQolStyles.Muted);
+                    WkStyles.Muted);
                 if (GUILayout.Button("Fix Read/Write", EditorStyles.miniButton, GUILayout.Width(110))) {
                     EnableReadWrite(renderer.sharedMesh);
                 }
@@ -293,7 +295,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
         // ---- Plan view ---------------------------------------------------
 
         private void DrawPlanView() {
-            using (AvatarQolStyles.Section("4. Plan",
+            using (WkStyles.Section("4. Plan",
                     "Click Validate above to see exactly which operations would run, grouped by the renderer they write to. Shape-name conflicts are highlighted.")) {
                 if (_lastValidation == null) {
                     EditorGUILayout.LabelField("Run Validate to populate the plan view.", EditorStyles.centeredGreyMiniLabel);
@@ -307,12 +309,12 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
 
                 if (_lastValidation.Errors.Count > 0) {
                     foreach (var err in _lastValidation.Errors) {
-                        AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning, err);
+                        WkStyles.Notice(NoticeKind.Warning, err);
                     }
                 }
                 if (_lastValidation.Warnings.Count > 0) {
                     foreach (var w in _lastValidation.Warnings) {
-                        AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Warning, w);
+                        WkStyles.Notice(NoticeKind.Warning, w);
                     }
                 }
 
@@ -321,7 +323,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
                     .GroupBy(r => r.Target)
                     .OrderBy(g => g.Key != null ? g.Key.name : "");
                 foreach (var group in byRenderer) {
-                    EditorGUILayout.LabelField($"{group.Key.name}", AvatarQolStyles.SubsectionTitle);
+                    EditorGUILayout.LabelField($"{group.Key.name}", WkStyles.SubsectionTitle);
                     foreach (var row in group) {
                         DrawPlanRow(row);
                     }
@@ -329,7 +331,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
 
                 var unrendered = _lastValidation.Plan.Where(r => r.Target == null).ToList();
                 if (unrendered.Count > 0) {
-                    EditorGUILayout.LabelField("Operations without a resolved target:", AvatarQolStyles.SubsectionTitle);
+                    EditorGUILayout.LabelField("Operations without a resolved target:", WkStyles.SubsectionTitle);
                     foreach (var row in unrendered) DrawPlanRow(row);
                 }
             }
@@ -339,21 +341,21 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
             Color pillColor;
             string pillText;
             switch (row.Status) {
-                case MeshFixPipeline.PlanStatus.Ok:       pillColor = AvatarQolStyles.ColorSuccess; pillText = "OK"; break;
-                case MeshFixPipeline.PlanStatus.Warning:  pillColor = AvatarQolStyles.ColorWarning; pillText = "warn"; break;
-                case MeshFixPipeline.PlanStatus.Conflict: pillColor = AvatarQolStyles.CategoryHumanoid; pillText = "conflict"; break;
-                case MeshFixPipeline.PlanStatus.Error:    pillColor = AvatarQolStyles.CategoryHumanoid; pillText = "error"; break;
-                default:                                  pillColor = AvatarQolStyles.ColorInfo; pillText = "skipped"; break;
+                case MeshFixPipeline.PlanStatus.Ok:       pillColor = WkStyles.ColorSuccess; pillText = "OK"; break;
+                case MeshFixPipeline.PlanStatus.Warning:  pillColor = WkStyles.ColorWarning; pillText = "warn"; break;
+                case MeshFixPipeline.PlanStatus.Conflict: pillColor = AvatarQolCategoryColors.Humanoid; pillText = "conflict"; break;
+                case MeshFixPipeline.PlanStatus.Error:    pillColor = AvatarQolCategoryColors.Humanoid; pillText = "error"; break;
+                default:                                  pillColor = WkStyles.ColorInfo; pillText = "skipped"; break;
             }
 
             using (new EditorGUILayout.HorizontalScope()) {
                 GUILayout.Space(10);
-                AvatarQolStyles.BadgePill(pillText, pillColor, row.Note);
+                WkStyles.BadgePill(pillText, pillColor, row.Note);
                 EditorGUILayout.LabelField(
                     new GUIContent(
                         $"[{row.Operation.DisplayName}] from {OwnerName(row.Operation)}  -> {(row.Target != null ? row.Target.name : "(no target)")}   shape: {row.ShapeName}",
                         row.Note),
-                    AvatarQolStyles.Mono);
+                    WkStyles.Mono);
                 GUILayout.FlexibleSpace();
                 if (row.Operation.Owner is Component c && c != null && c.gameObject != null) {
                     if (GUILayout.Button(new GUIContent("Ping", "Ping the owning setup in the hierarchy."),
@@ -395,7 +397,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
             Selection.activeObject = setup.gameObject;
             EditorGUIUtility.PingObject(setup.gameObject);
             _lastMessage =
-                $"Stored Auto Tighten To Body on {AvatarQol.GetGameObjectPath(setup.gameObject)}. " +
+                $"Stored Auto Tighten To Body on {PathUtility.GetGameObjectPath(setup.gameObject)}. " +
                 "Select that clothing mesh to see the component, or use this window to edit it.";
             _lastValidation = null;
         }

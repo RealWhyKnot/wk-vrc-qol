@@ -36,6 +36,8 @@ using System.IO;
 using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 using WhyKnot.AvatarQol.MeshFixes.Pipeline;
 
 namespace WhyKnot.AvatarQol.Tools {
@@ -122,7 +124,13 @@ namespace WhyKnot.AvatarQol.Tools {
 
             // If the mesh is an FBX/OBJ/DAE sub-asset, we have to clone to a
             // separately-owned .mesh asset. Otherwise modify in place.
-            Mesh editableMesh = ResolveEditableMesh(renderer, sharedMesh, result);
+            var resolved = FbxMeshUtility.ResolveEditableMesh(
+                renderer, sharedMesh, "(FixedWeights)", "Reassign mesh after fix", GeneratedFolder);
+            if (resolved.WasCloned) {
+                result.MeshesCloned++;
+                result.ClonedMeshPaths.Add(resolved.ClonedPath);
+            }
+            Mesh editableMesh = resolved.Mesh;
             if (editableMesh == null) return false;
 
             var bones = renderer.bones;
@@ -246,49 +254,5 @@ namespace WhyKnot.AvatarQol.Tools {
             return -1;
         }
 
-        // ---- editable-mesh resolution ------------------------------------
-
-        // If sharedMesh is a sub-asset of an FBX/OBJ/DAE, we can't write to
-        // it (the importer would overwrite us). Clone to a fresh .mesh
-        // asset, assign to the renderer, and return that. Otherwise return
-        // sharedMesh unchanged. Cloning is cached per-renderer so multiple
-        // issues on the same renderer don't make multiple clones.
-        private static Mesh ResolveEditableMesh(SkinnedMeshRenderer renderer, Mesh sharedMesh, FixResult result) {
-            var path = AssetDatabase.GetAssetPath(sharedMesh);
-            bool isImporterSubAsset = !string.IsNullOrEmpty(path)
-                && (path.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase)
-                    || path.EndsWith(".obj", System.StringComparison.OrdinalIgnoreCase)
-                    || path.EndsWith(".dae", System.StringComparison.OrdinalIgnoreCase)
-                    || path.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase)
-                    || path.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase));
-            if (!isImporterSubAsset) return sharedMesh;
-
-            EnsureGeneratedFolder();
-            var clone = Object.Instantiate(sharedMesh);
-            clone.name = sharedMesh.name + " (Fixed)";
-            string targetPath = AssetDatabase.GenerateUniqueAssetPath(
-                $"{GeneratedFolder}/{SanitizeFileName(sharedMesh.name)}_FixedWeights.asset");
-            AssetDatabase.CreateAsset(clone, targetPath);
-
-            Undo.RecordObject(renderer, "Reassign mesh after fix");
-            renderer.sharedMesh = clone;
-            EditorUtility.SetDirty(renderer);
-
-            result.MeshesCloned++;
-            result.ClonedMeshPaths.Add(targetPath);
-            return clone;
-        }
-
-        private static void EnsureGeneratedFolder() {
-            if (!AssetDatabase.IsValidFolder(GeneratedFolder)) {
-                AssetDatabase.CreateFolder("Assets", "AvatarQol Generated");
-            }
-        }
-
-        private static string SanitizeFileName(string name) {
-            if (string.IsNullOrEmpty(name)) return "mesh";
-            foreach (var ch in Path.GetInvalidFileNameChars()) name = name.Replace(ch, '_');
-            return name;
-        }
     }
 }

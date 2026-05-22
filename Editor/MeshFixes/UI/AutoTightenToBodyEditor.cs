@@ -15,6 +15,8 @@
 
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.MeshFixes.Lifecycle;
 using WhyKnot.AvatarQol.MeshFixes.Pipeline;
@@ -66,7 +68,7 @@ namespace WhyKnot.AvatarQol.MeshFixes.UI {
         public override void OnInspectorGUI() {
             serializedObject.Update();
 
-            EditorGUILayout.LabelField("Auto Tighten To Body", AvatarQolStyles.SubsectionTitle);
+            EditorGUILayout.LabelField("Auto Tighten To Body", WkStyles.SubsectionTitle);
             EditorGUILayout.HelpBox(
                 "Stored mesh fix. The pipeline picks this up automatically during preview, play mode, and upload.",
                 MessageType.Info);

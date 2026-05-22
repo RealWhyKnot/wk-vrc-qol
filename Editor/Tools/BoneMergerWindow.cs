@@ -34,6 +34,8 @@ using System.Linq;
 using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.Core.Styling;
+using WhyKnot.Core.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 
@@ -86,7 +88,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void OnGUI() {
             DrawTitleBar();
-            AvatarQolStyles.Notice(AvatarQolStyles.NoticeKind.Info,
+            WkStyles.Notice(NoticeKind.Info,
                 "Folds a stray duplicate bone (e.g. Blender's Boob_L.001) into its kept counterpart. Skin weights transfer across every SkinnedMeshRenderer under the avatar, then the merged-away bone is removed.");
             DrawAvatar();
             EditorGUILayout.Space(2);
@@ -104,7 +106,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 EditorGUILayout.LabelField(
                     new GUIContent("Bone Merger",
                         "Transfer skin weights from one bone onto another, then optionally delete the now-empty bone. Useful for collapsing Blender ''.001'' duplicate bones back into their parent."),
-                    AvatarQolStyles.SectionTitle);
+                    WkStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
                         new GUIContent("?", "Open the Avatar QoL wiki page for this tool in your browser."),
@@ -115,9 +117,9 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawAvatar() {
-            using (AvatarQolStyles.Section("1. Pick avatar",
+            using (WkStyles.Section("1. Pick avatar",
                     "The Animator at the root of the avatar. Every SkinnedMeshRenderer under it gets scanned for weights on the bones you list below.")) {
-                AvatarQolStyles.LabeledField(
+                WkStyles.LabeledField(
                     new GUIContent("Animator",
                         "Animator at the avatar root. Doesn't need to be Humanoid -- any rig works."),
                     () => {
@@ -126,17 +128,17 @@ namespace WhyKnot.AvatarQol.Tools {
                     });
                 if (_animator != null) {
                     int smrCount = _animator.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length;
-                    EditorGUILayout.LabelField($"{smrCount} SkinnedMeshRenderer(s) under this Animator.", AvatarQolStyles.Muted);
+                    EditorGUILayout.LabelField($"{smrCount} SkinnedMeshRenderer(s) under this Animator.", WkStyles.Muted);
                 }
             }
         }
 
         private void DrawPairs() {
-            using (AvatarQolStyles.Section("2. Bones to merge",
+            using (WkStyles.Section("2. Bones to merge",
                     "Drag two bones onto each row. The LEFT bone's weights move onto the RIGHT bone, and the LEFT bone is then removed.")) {
                 EditorGUILayout.LabelField(
                     "Read each row left to right: \"merge THIS bone into THIS one\". Drag the duplicate / extra bone on the left, the keeper on the right.",
-                    AvatarQolStyles.Muted);
+                    WkStyles.Muted);
 
                 EditorGUILayout.Space(2);
 
@@ -185,7 +187,7 @@ namespace WhyKnot.AvatarQol.Tools {
                         // Surface inline problems so the user sees them before
                         // hitting Apply.
                         if (pair.mergeFrom != null && pair.mergeInto != null && pair.mergeFrom == pair.mergeInto) {
-                            EditorGUILayout.LabelField("   Both fields point at the same bone -- nothing to merge.", AvatarQolStyles.Muted);
+                            EditorGUILayout.LabelField("   Both fields point at the same bone -- nothing to merge.", WkStyles.Muted);
                         }
                     }
                     if (removeAt >= 0) { _pairs.RemoveAt(removeAt); ClearResults(); }
@@ -212,7 +214,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawOptions() {
-            using (AvatarQolStyles.Section("3. Options",
+            using (WkStyles.Section("3. Options",
                     "Defaults match the typical Blender duplicate-bone cleanup workflow.")) {
                 _deleteMergedBones = EditorGUILayout.ToggleLeft(
                     new GUIContent("Delete the merged-away bone after applying",
@@ -230,7 +232,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private void DrawApplyBar() {
             using (new EditorGUILayout.HorizontalScope()) {
                 using (new EditorGUI.DisabledScope(!CanApply())) {
-                    if (AvatarQolStyles.PrimaryButtonInline(
+                    if (WkStyles.PrimaryButtonInline(
                             new GUIContent("Apply merge",
                                 "Transfer skin weights across every renderer under the Animator, then (if enabled) delete the merged-away bones. Wrapped in a single Undo step."),
                             GUILayout.MinWidth(140))) {
@@ -247,7 +249,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 GUILayout.FlexibleSpace();
                 if (!string.IsNullOrEmpty(_resultSummary)) {
-                    EditorGUILayout.LabelField(_resultSummary, AvatarQolStyles.Muted);
+                    EditorGUILayout.LabelField(_resultSummary, WkStyles.Muted);
                 }
             }
         }
@@ -255,10 +257,10 @@ namespace WhyKnot.AvatarQol.Tools {
         private void DrawResults() {
             if (_resultDetail.Count == 0) return;
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
-                EditorGUILayout.LabelField("Last run", AvatarQolStyles.SubsectionTitle);
+                EditorGUILayout.LabelField("Last run", WkStyles.SubsectionTitle);
                 _scroll = EditorGUILayout.BeginScrollView(_scroll);
                 foreach (var line in _resultDetail) {
-                    EditorGUILayout.LabelField(line, AvatarQolStyles.Mono);
+                    EditorGUILayout.LabelField(line, WkStyles.Mono);
                 }
                 EditorGUILayout.EndScrollView();
             }
@@ -476,9 +478,15 @@ namespace WhyKnot.AvatarQol.Tools {
             // Resolve to an editable mesh -- clone if the sharedMesh is owned
             // by a model importer (FBX/OBJ/etc).
             var sharedMesh = renderer.sharedMesh;
-            var editableMesh = ResolveEditableMesh(renderer, sharedMesh, ref meshesCloned, clonedPaths, out bool wasCloned);
+            var resolved = FbxMeshUtility.ResolveEditableMesh(
+                renderer, sharedMesh, "(MergedBones)", "Create merged mesh", GeneratedFolder);
+            var editableMesh = resolved.Mesh;
             if (editableMesh == null) return result;
-            result.WasCloned = wasCloned;
+            if (resolved.WasCloned) {
+                meshesCloned++;
+                clonedPaths.Add(resolved.ClonedPath);
+            }
+            result.WasCloned = resolved.WasCloned;
 
             var srcBpv = editableMesh.GetBonesPerVertex();
             var srcWeights = editableMesh.GetAllBoneWeights();
@@ -578,52 +586,6 @@ namespace WhyKnot.AvatarQol.Tools {
             }
         }
 
-        // ------ Mesh / asset resolution ------------------------------------
-
-        private static Mesh ResolveEditableMesh(SkinnedMeshRenderer renderer, Mesh sharedMesh,
-                                                ref int meshesCloned, List<string> clonedPaths,
-                                                out bool wasCloned) {
-            wasCloned = false;
-            var path = AssetDatabase.GetAssetPath(sharedMesh);
-            bool isImporterSubAsset = !string.IsNullOrEmpty(path)
-                && (path.EndsWith(".fbx",  System.StringComparison.OrdinalIgnoreCase)
-                 || path.EndsWith(".obj",  System.StringComparison.OrdinalIgnoreCase)
-                 || path.EndsWith(".dae",  System.StringComparison.OrdinalIgnoreCase)
-                 || path.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase)
-                 || path.EndsWith(".glb",  System.StringComparison.OrdinalIgnoreCase));
-            if (!isImporterSubAsset) return sharedMesh;
-
-            EnsureGeneratedFolder();
-            var clone = Object.Instantiate(sharedMesh);
-            clone.name = sharedMesh.name + " (Merged)";
-            string targetPath = AssetDatabase.GenerateUniqueAssetPath(
-                $"{GeneratedFolder}/{SanitizeFileName(sharedMesh.name)}_MergedBones.asset");
-            AssetDatabase.CreateAsset(clone, targetPath);
-            // Asset object undo so Ctrl+Z removes the file from disk too,
-            // not just the renderer assignment.
-            Undo.RegisterCreatedObjectUndo(clone, "Create merged mesh");
-
-            Undo.RecordObject(renderer, "Reassign mesh after bone merge");
-            renderer.sharedMesh = clone;
-            EditorUtility.SetDirty(renderer);
-
-            meshesCloned++;
-            clonedPaths.Add(targetPath);
-            wasCloned = true;
-            return clone;
-        }
-
-        private static void EnsureGeneratedFolder() {
-            if (!AssetDatabase.IsValidFolder(GeneratedFolder)) {
-                AssetDatabase.CreateFolder("Assets", "AvatarQol Generated");
-            }
-        }
-
-        private static string SanitizeFileName(string name) {
-            if (string.IsNullOrEmpty(name)) return "mesh";
-            foreach (var ch in Path.GetInvalidFileNameChars()) name = name.Replace(ch, '_');
-            return name;
-        }
 
         // ------ Helpers ----------------------------------------------------
 
@@ -638,7 +600,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private static string RendererPath(SkinnedMeshRenderer r) {
-            return r == null ? "(null)" : AvatarQol.GetGameObjectPath(r.gameObject);
+            return r == null ? "(null)" : PathUtility.GetGameObjectPath(r.gameObject);
         }
 
         private void ClearResults() {
