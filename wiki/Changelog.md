@@ -12,6 +12,7 @@ The most recent release is at the top.
 ## Unreleased
 
 ### Changed
+- **deps:** Add `dev.whyknot.core` (>=1.0.0) as a hard `vpmDependency`. VCC auto-installs the shared utility package alongside vrc-avatar-qol. Internal-only refactor that moves `AvatarQolStyles` (palette + lazy GUIStyles + IMGUI primitives) -> `WkStyles`, `HumanoidSideMap` + `BoneSide` -> `WhyKnot.Core.Utilities`, `GetGameObjectPath` -> `WhyKnot.Core.Utilities.PathUtility`, and the FBX-clone helper that `WeightFixer` and `BoneMergerWindow` duplicated -> `WhyKnot.Core.Utilities.FbxMeshUtility`. The three domain-specific issue-category colors (humanoid / spatial / center) stay in this package as `AvatarQolCategoryColors`. No user-visible behaviour change beyond Ctrl+Z on `WeightFixer` now also removing the cloned `.mesh` asset from disk (parity with Bone Merger's existing behaviour).
 - **deps:** Bump actions/checkout from 4 to 6 (#1) (0d8ab2b)
 - Mesh Fix pipeline: fix native-array leak, missing using, idempotent delayCall, preview leak; only clone write-target meshes (31d1746)
 - Editor asmdef: gate WHYKNOT_NDMF on nadena.dev.ndmf >=1.0.0; qualify Object disambiguation (5785f9d)
