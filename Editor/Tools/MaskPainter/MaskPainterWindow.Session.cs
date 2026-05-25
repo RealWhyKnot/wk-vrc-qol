@@ -55,6 +55,8 @@ namespace WhyKnot.AvatarQol.Tools {
             _strokeCount = 0;
             _dispatchCount = 0;
             _firstHitLogged = false;
+            _firstMouseDownLogged = false;
+            _bakeConventionLogged = false;
             HideToolsForPainting();
 
             // Enable MouseMove dispatch on every existing scene view. Newly
@@ -109,7 +111,13 @@ namespace WhyKnot.AvatarQol.Tools {
             if (_snapshotMesh == null) {
                 _snapshotMesh = new Mesh { name = "WhyKnotMaskPainter_Snapshot", hideFlags = HideFlags.HideAndDontSave };
             }
-            _renderer.BakeMesh(_snapshotMesh);
+            // Explicit useScale: the single-arg overload defaults to false,
+            // which on Unity 2022.3 means the baked vertices are NOT
+            // pre-multiplied by the SMR's lossyScale. We then carry that
+            // scale through localToWorldMatrix below. Spelling it out makes
+            // the convention scale-agnostic across Unity version drift and
+            // documents the pairing.
+            _renderer.BakeMesh(_snapshotMesh, useScale: false);
             var verts = _snapshotMesh.vertices;
             var matrix = _renderer.transform.localToWorldMatrix;
             _snapshotWorldVerts = new Vector3[verts.Length];
@@ -132,8 +140,52 @@ namespace WhyKnot.AvatarQol.Tools {
             for (int i = 0; i < shapeCount; i++) _bakedBlendShapes[i] = _renderer.GetBlendShapeWeight(i);
             _renderer.transform.hasChanged = false;
             _firstHitLogged = false;
+            // Re-arm the submesh-drift warning -- if the user selected
+            // submesh N against a 4-submesh mesh and the new bake came
+            // back with 3, we want exactly one warning, not none.
+            _submeshDriftWarned = false;
+            // Snap the stored selector into range against the freshly
+            // baked submesh count too, so the UI catches the drift on its
+            // next OnGUI even when the user hadn't reopened the picker.
+            if (_submeshIndex >= 0 && _submeshIndex >= _snapshotMesh.subMeshCount) {
+                Diag(LogLevel.Warn,
+                    $"Submesh selector ({_submeshIndex}) is out of range for the freshly-baked snapshot " +
+                    $"(subMeshCount={_snapshotMesh.subMeshCount}); resetting to All.");
+                _submeshIndex = -1;
+            }
+            VerifyBakeConvention();
             Diag(LogLevel.Trace,
                 $"Bake complete: verts={verts.Length}, submeshes={_snapshotMesh.subMeshCount}, worldBounds=({_snapshotWorldBounds.min} .. {_snapshotWorldBounds.max}), size={_snapshotWorldBounds.size}");
+        }
+
+        // One-shot per session: confirm the BakeMesh(false) + localToWorldMatrix
+        // pairing produced world bounds that actually overlap _renderer.bounds.
+        // A wildly mismatched ratio is the smoking gun for the rootBone-vs-SMR
+        // coordinate-space class of bug, where the SMR transform has scale 1
+        // but the bones inherit a 100x parent scale (a common VRChat hierarchy).
+        // Logs INFO once on first bake, then stays quiet.
+        private bool _bakeConventionLogged;
+        private void VerifyBakeConvention() {
+            if (_bakeConventionLogged) return;
+            _bakeConventionLogged = true;
+            var rb = _renderer.bounds;
+            float snapDiag = _snapshotWorldBounds.size.magnitude;
+            float rendDiag = rb.size.magnitude;
+            float ratio    = rendDiag > 0.0001f ? snapDiag / rendDiag : 0f;
+            string verdict = (ratio >= 0.5f && ratio <= 2f) ? "OK" : "MISMATCH";
+            Diag(LogLevel.Info,
+                $"Bake convention check [{verdict}]: snapshotWorldBounds size={_snapshotWorldBounds.size} " +
+                $"(diag {snapDiag:F3}m), renderer.bounds size={rb.size} (diag {rendDiag:F3}m), " +
+                $"ratio={ratio:F3} (expect ~1.0). SMR lossyScale={_renderer.transform.lossyScale}, " +
+                $"rootBone={(_renderer.rootBone != null ? _renderer.rootBone.name : "(null)")}.");
+            if (verdict == "MISMATCH") {
+                Diag(LogLevel.Warn,
+                    "Bake convention MISMATCH: snapshot bounds and renderer.bounds disagree by >2x. " +
+                    "Clicks may miss because triangles aren't in the world space the SceneView ray walks. " +
+                    "Common cause: rootBone parent carries a scale (e.g. 100x Blender import) while the SMR " +
+                    "transform sits at scale 1. Try setting the avatar root scale to 1, or report this with " +
+                    "the Dump State output.");
+            }
         }
 
         private bool HasPoseDrift() {
@@ -211,12 +263,9 @@ namespace WhyKnot.AvatarQol.Tools {
                 _brushMaterial.SetPass(PassForMode());
 
                 var matrix = _renderer.transform.localToWorldMatrix;
-                if (_submeshIndex < 0) {
-                    for (int s = 0; s < _snapshotMesh.subMeshCount; s++) {
-                        Graphics.DrawMeshNow(_snapshotMesh, matrix, s);
-                    }
-                } else if (_submeshIndex < _snapshotMesh.subMeshCount) {
-                    Graphics.DrawMeshNow(_snapshotMesh, matrix, _submeshIndex);
+                var range = MaskPainterIO.SubmeshRange(_submeshIndex, _snapshotMesh.subMeshCount, WarnSubmeshDrift);
+                for (int s = range.start; s < range.end; s++) {
+                    Graphics.DrawMeshNow(_snapshotMesh, matrix, s);
                 }
             } finally {
                 RenderTexture.active = prev;

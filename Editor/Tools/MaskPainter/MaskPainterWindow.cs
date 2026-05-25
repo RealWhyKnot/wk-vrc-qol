@@ -70,6 +70,9 @@ namespace WhyKnot.AvatarQol.Tools {
         [SerializeField] private bool  _showSceneHud     = true;
         [SerializeField] private bool  _showHotkeyStrip  = true;
         [SerializeField] private bool  _showSymmetryPlane = false;
+        [SerializeField] private bool  _showUvWireframe  = true;
+        [SerializeField] private bool  _showUvCrosshair  = true;
+        [SerializeField] private bool  _showUvGrid       = false;
 
         // ---- Volatile state (re-built after every domain reload) ----
 
@@ -85,7 +88,14 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private Vector3 _hitWorld;
         private Vector3 _hitNormal;
+        private Vector2 _hitUv;             // UV0 coord at the raycast hit; valid only when _hasHit.
         private bool    _hasHit;
+
+        // ---- UV map cache (regenerated on mesh / submesh / resolution change) ----
+        private Texture2D _uvWireframeTex;
+        private int       _uvWireframeMeshId;
+        private int       _uvWireframeSubmesh;
+        private int       _uvWireframeSize;
         private Vector2 _lastMousePos = new Vector2(-1, -1);
         private double  _lastStrokeTime;
         private const double StrokeIntervalSec = 1.0 / 60.0;
@@ -122,6 +132,9 @@ namespace WhyKnot.AvatarQol.Tools {
         private const string PrefsShowHud             = PrefsPrefix + "ShowHud";
         private const string PrefsShowHotkeyStrip     = PrefsPrefix + "ShowHotkeyStrip";
         private const string PrefsShowSymmetryPlane   = PrefsPrefix + "ShowSymmetryPlane";
+        private const string PrefsShowUvWireframe     = PrefsPrefix + "ShowUvWireframe";
+        private const string PrefsShowUvCrosshair     = PrefsPrefix + "ShowUvCrosshair";
+        private const string PrefsShowUvGrid          = PrefsPrefix + "ShowUvGrid";
 
         private const string WikiUrl =
             "https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Tools-Overview#paint-mask";
@@ -195,6 +208,10 @@ namespace WhyKnot.AvatarQol.Tools {
             if (_snapshotMesh != null) { DestroyImmediate(_snapshotMesh); _snapshotMesh = null; }
             if (_brushMaterial != null) { DestroyImmediate(_brushMaterial); _brushMaterial = null; }
             if (_previewMaterial != null) { DestroyImmediate(_previewMaterial); _previewMaterial = null; }
+            if (_uvWireframeTex != null) { DestroyImmediate(_uvWireframeTex); _uvWireframeTex = null; }
+            _uvWireframeMeshId  = 0;
+            _uvWireframeSubmesh = int.MinValue;
+            _uvWireframeSize    = 0;
             foreach (var t in _undoStack) if (t != null) DestroyImmediate(t);
             _undoStack.Clear();
             _snapshotWorldVerts = null;
@@ -220,6 +237,9 @@ namespace WhyKnot.AvatarQol.Tools {
             _showSceneHud       = EditorPrefs.GetBool (PrefsShowHud,            _showSceneHud);
             _showHotkeyStrip    = EditorPrefs.GetBool (PrefsShowHotkeyStrip,    _showHotkeyStrip);
             _showSymmetryPlane  = EditorPrefs.GetBool (PrefsShowSymmetryPlane,  _showSymmetryPlane);
+            _showUvWireframe    = EditorPrefs.GetBool (PrefsShowUvWireframe,    _showUvWireframe);
+            _showUvCrosshair    = EditorPrefs.GetBool (PrefsShowUvCrosshair,    _showUvCrosshair);
+            _showUvGrid         = EditorPrefs.GetBool (PrefsShowUvGrid,         _showUvGrid);
         }
 
         private void SaveEditorPrefs() {
@@ -235,6 +255,9 @@ namespace WhyKnot.AvatarQol.Tools {
             EditorPrefs.SetBool (PrefsShowHud,            _showSceneHud);
             EditorPrefs.SetBool (PrefsShowHotkeyStrip,    _showHotkeyStrip);
             EditorPrefs.SetBool (PrefsShowSymmetryPlane,  _showSymmetryPlane);
+            EditorPrefs.SetBool (PrefsShowUvWireframe,    _showUvWireframe);
+            EditorPrefs.SetBool (PrefsShowUvCrosshair,    _showUvCrosshair);
+            EditorPrefs.SetBool (PrefsShowUvGrid,         _showUvGrid);
         }
 
         // ---- Diagnostics helper ----

@@ -99,6 +99,35 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         /// <summary>
+        /// Resolve the submesh iteration window for one paint pass.
+        ///
+        /// <paramref name="requestedIndex"/> == -1 means "every submesh". A
+        /// non-negative index in range runs only that one. Anything else --
+        /// a negative value other than -1, or an index >= subMeshCount --
+        /// is treated as "every submesh" so the painter never silently
+        /// produces a zero-triangle pass after the snapshot mesh changes
+        /// shape underneath the stored selection. <paramref name="onWarning"/>
+        /// fires once per call when the fallback kicks in so the drift is
+        /// visible in the log instead of looking like a silent miss.
+        ///
+        /// Returns (start, end, fellBackToAll): iterate [start, end) and
+        /// branch on fellBackToAll if the caller wants to flag the
+        /// fallback in the UI as well.
+        /// </summary>
+        internal static (int start, int end, bool fellBackToAll) SubmeshRange(
+                int requestedIndex, int subMeshCount, Action<string> onWarning = null) {
+            if (subMeshCount <= 0) return (0, 0, false);
+            if (requestedIndex == -1) return (0, subMeshCount, false);
+            if (requestedIndex >= 0 && requestedIndex < subMeshCount) {
+                return (requestedIndex, requestedIndex + 1, false);
+            }
+            onWarning?.Invoke(
+                $"Submesh selector ({requestedIndex}) is out of range for the snapshot mesh " +
+                $"(subMeshCount={subMeshCount}); falling back to all submeshes for this pass.");
+            return (0, subMeshCount, true);
+        }
+
+        /// <summary>
         /// Reflect a world-space point across the symmetry-root's local
         /// X axis. Falls back to a world-X mirror when the root is null,
         /// which suits avatars sitting at the world origin facing +Z.
@@ -110,6 +139,90 @@ namespace WhyKnot.AvatarQol.Tools {
             Vector3 local = symmetryRoot.InverseTransformPoint(worldPos);
             local.x = -local.x;
             return symmetryRoot.TransformPoint(local);
+        }
+
+        // -----------------------------------------------------------------
+        // UV wireframe (UV island visualization)
+        // -----------------------------------------------------------------
+
+        /// <summary>
+        /// Build a Texture2D where pixels lit to white-alpha trace the
+        /// mesh's UV0 triangle edges and clear-alpha everywhere else.
+        /// Caller tints at draw time via <c>GUI.DrawTexture</c>'s tint
+        /// parameter so the same texture can serve light and dark mask
+        /// previews without a rebuild.
+        ///
+        /// CPU Bresenham rasterizer with submesh filtering: edges whose
+        /// endpoints sit outside [0, 1]^2 are dropped so UVs that wrap or
+        /// tile don't smear lines along the texture border. Linear color
+        /// space because the result is data (mask wireframe), not a
+        /// gamma-encoded swatch.
+        /// </summary>
+        internal static Texture2D GenerateUvWireframe(Mesh mesh, int submeshIndex, int size) {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false, linear: true) {
+                hideFlags  = HideFlags.HideAndDontSave,
+                name       = $"WkMaskPainter_UvWireframe_{(mesh != null ? mesh.GetInstanceID() : 0)}_{submeshIndex}_{size}",
+                filterMode = FilterMode.Bilinear,
+                wrapMode   = TextureWrapMode.Clamp,
+            };
+            var pixels = new Color32[size * size];
+            // Color32 defaults to (0,0,0,0); leave it that way.
+            if (mesh == null || mesh.uv == null || mesh.uv.Length == 0) {
+                tex.SetPixels32(pixels);
+                tex.Apply(false, false);
+                return tex;
+            }
+            var uvs   = mesh.uv;
+            var range = SubmeshRange(submeshIndex, mesh.subMeshCount, null);
+            var line  = new Color32(255, 255, 255, 255);
+            for (int s = range.start; s < range.end; s++) {
+                if (mesh.GetTopology(s) != MeshTopology.Triangles) continue;
+                var tris = mesh.GetTriangles(s);
+                for (int i = 0; i + 2 < tris.Length; i += 3) {
+                    int i0 = tris[i], i1 = tris[i + 1], i2 = tris[i + 2];
+                    if (i0 >= uvs.Length || i1 >= uvs.Length || i2 >= uvs.Length) continue;
+                    var a = uvs[i0]; var b = uvs[i1]; var c = uvs[i2];
+                    DrawUvLine(pixels, size, a, b, line);
+                    DrawUvLine(pixels, size, b, c, line);
+                    DrawUvLine(pixels, size, c, a, line);
+                }
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, false);
+            return tex;
+        }
+
+        /// <summary>
+        /// Bresenham line into a Color32 buffer indexed (y * size + x).
+        /// Skips lines whose endpoints sit outside [0,1]^2 -- UV tiling
+        /// would otherwise paint a fake border along the edge of the
+        /// preview. Y axis matches UV space (origin bottom-left) by
+        /// flipping the texture-row index so islands display the right
+        /// way up against the painted mask.
+        /// </summary>
+        internal static void DrawUvLine(Color32[] pixels, int size, Vector2 a, Vector2 b, Color32 color) {
+            const float eps = 0.005f;
+            if (a.x < -eps || a.x > 1f + eps || a.y < -eps || a.y > 1f + eps) return;
+            if (b.x < -eps || b.x > 1f + eps || b.y < -eps || b.y > 1f + eps) return;
+            int max = size - 1;
+            int x0 = Mathf.Clamp(Mathf.RoundToInt(a.x * max), 0, max);
+            int y0 = Mathf.Clamp(Mathf.RoundToInt(a.y * max), 0, max);
+            int x1 = Mathf.Clamp(Mathf.RoundToInt(b.x * max), 0, max);
+            int y1 = Mathf.Clamp(Mathf.RoundToInt(b.y * max), 0, max);
+            int dx = Mathf.Abs(x1 - x0); int sx = x0 < x1 ? 1 : -1;
+            int dy = -Mathf.Abs(y1 - y0); int sy = y0 < y1 ? 1 : -1;
+            int err = dx + dy;
+            // Hard cap on iterations so a pathological mesh can't lock the
+            // Editor up if a UV passes the [0,1] filter but the rasterised
+            // endpoints diverge by more pixels than the texture has.
+            int safety = 4 * size;
+            while (safety-- > 0) {
+                pixels[y0 * size + x0] = color;
+                if (x0 == x1 && y0 == y1) break;
+                int e2 = err * 2;
+                if (e2 >= dy) { err += dy; x0 += sx; }
+                if (e2 <= dx) { err += dx; y0 += sy; }
+            }
         }
 
         // -----------------------------------------------------------------

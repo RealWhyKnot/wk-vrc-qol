@@ -195,5 +195,205 @@ namespace WhyKnot.AvatarQol.Tests {
                 Object.DestroyImmediate(rootGo);
             }
         }
+
+        // ----------------------------------------------------------------
+        // Submesh range resolver
+        //
+        // The painter used to compute (subStart, subEnd) inline at three
+        // call sites with `Mathf.Min(_submeshIndex + 1, subMeshCount)`,
+        // which silently produced an empty range when the stored index
+        // drifted past the snapshot mesh's submesh count -- every click
+        // missed, no exception, no warning. SubmeshRange is the central
+        // fix; these tests pin its behaviour so the regression can't come
+        // back.
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void SubmeshRange_NegOneIteratesAllSubmeshes() {
+            var range = MaskPainterIO.SubmeshRange(-1, 4);
+            Assert.AreEqual(0, range.start);
+            Assert.AreEqual(4, range.end);
+            Assert.IsFalse(range.fellBackToAll, "Negative-one is the explicit 'all' sentinel, not a fallback.");
+        }
+
+        [Test]
+        public void SubmeshRange_InRangeIndexIteratesJustThatSubmesh() {
+            var range = MaskPainterIO.SubmeshRange(2, 4);
+            Assert.AreEqual(2, range.start);
+            Assert.AreEqual(3, range.end);
+            Assert.IsFalse(range.fellBackToAll);
+        }
+
+        [Test]
+        public void SubmeshRange_OutOfRangeFallsBackToAllAndWarns() {
+            string warning = null;
+            // requestedIndex == subMeshCount is the precise footgun case.
+            var range = MaskPainterIO.SubmeshRange(3, 3, msg => warning = msg);
+            Assert.AreEqual(0, range.start);
+            Assert.AreEqual(3, range.end, "Fallback must iterate every submesh, not zero.");
+            Assert.IsTrue(range.fellBackToAll);
+            Assert.IsNotNull(warning, "Caller must be told when its stored index drifted out of range.");
+            StringAssert.Contains("3", warning);
+            StringAssert.Contains("subMeshCount", warning);
+        }
+
+        [Test]
+        public void SubmeshRange_NegativeOtherThanMinusOneFallsBack() {
+            string warning = null;
+            var range = MaskPainterIO.SubmeshRange(-5, 2, msg => warning = msg);
+            Assert.AreEqual(0, range.start);
+            Assert.AreEqual(2, range.end);
+            Assert.IsTrue(range.fellBackToAll);
+            Assert.IsNotNull(warning);
+        }
+
+        [Test]
+        public void SubmeshRange_ZeroSubmeshMeshReturnsEmptyRange() {
+            // A degenerate snapshot (no submeshes) returns (0,0); the
+            // caller's for-loop body simply doesn't execute. We do NOT
+            // warn here because there's nothing the user could do about
+            // the empty mesh.
+            string warning = null;
+            var range = MaskPainterIO.SubmeshRange(-1, 0, msg => warning = msg);
+            Assert.AreEqual(0, range.start);
+            Assert.AreEqual(0, range.end);
+            Assert.IsFalse(range.fellBackToAll);
+            Assert.IsNull(warning);
+        }
+
+        // ----------------------------------------------------------------
+        // UV wireframe line rasterizer
+        //
+        // GenerateUvWireframe uses DrawUvLine to trace triangle edges.
+        // The line clipping rule -- drop any line whose endpoints exit
+        // [0,1]^2 -- exists so UVs that tile or wrap don't smear false
+        // edges along the texture border.
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void DrawUvLine_InBoundsHorizontalLineWritesPixels() {
+            const int size = 16;
+            var pixels = new Color32[size * size];
+            // y = 0.5 horizontal line from x=0.1 to x=0.9.
+            MaskPainterIO.DrawUvLine(pixels, size, new Vector2(0.1f, 0.5f), new Vector2(0.9f, 0.5f),
+                new Color32(255, 255, 255, 255));
+            int lit = 0;
+            for (int i = 0; i < pixels.Length; i++) if (pixels[i].a > 0) lit++;
+            Assert.Greater(lit, 0, "An in-bounds horizontal segment must light at least one texel.");
+        }
+
+        [Test]
+        public void DrawUvLine_BothEndpointsOutsideAreDropped() {
+            const int size = 16;
+            var pixels = new Color32[size * size];
+            MaskPainterIO.DrawUvLine(pixels, size, new Vector2(-0.5f, 0.5f), new Vector2(1.5f, 0.5f),
+                new Color32(255, 255, 255, 255));
+            for (int i = 0; i < pixels.Length; i++) {
+                Assert.AreEqual(0, pixels[i].a,
+                    "A line whose endpoints both sit outside [0,1] would smear a fake border across the preview if drawn.");
+            }
+        }
+
+        [Test]
+        public void DrawUvLine_OneEndpointOutsideIsDropped() {
+            // The current rule is conservative: if either endpoint is
+            // outside [0,1] the whole edge is dropped. Documenting that
+            // explicitly so a future tweak (clip-to-border) has to update
+            // the test rather than silently change behaviour.
+            const int size = 16;
+            var pixels = new Color32[size * size];
+            MaskPainterIO.DrawUvLine(pixels, size, new Vector2(0.5f, 0.5f), new Vector2(1.5f, 0.5f),
+                new Color32(255, 255, 255, 255));
+            for (int i = 0; i < pixels.Length; i++) {
+                Assert.AreEqual(0, pixels[i].a);
+            }
+        }
+
+        [Test]
+        public void DrawUvLine_DegenerateZeroLengthLightsOnePixel() {
+            const int size = 8;
+            var pixels = new Color32[size * size];
+            MaskPainterIO.DrawUvLine(pixels, size, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Color32(255, 255, 255, 255));
+            int lit = 0;
+            for (int i = 0; i < pixels.Length; i++) if (pixels[i].a > 0) lit++;
+            Assert.AreEqual(1, lit, "A zero-length segment should light exactly the endpoint pixel.");
+        }
+
+        // ----------------------------------------------------------------
+        // GenerateUvWireframe end-to-end
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void GenerateUvWireframe_QuadProducesNonEmptyTexture() {
+            // Two-triangle quad whose UVs fill [0,1]^2. Every triangle
+            // edge sits inside the box, so the wireframe must have lit
+            // pixels along all four sides plus the diagonal.
+            var mesh = new Mesh {
+                vertices = new[] {
+                    new Vector3(0, 0, 0), new Vector3(1, 0, 0),
+                    new Vector3(1, 1, 0), new Vector3(0, 1, 0),
+                },
+                uv = new[] {
+                    new Vector2(0, 0), new Vector2(1, 0),
+                    new Vector2(1, 1), new Vector2(0, 1),
+                },
+                triangles = new[] { 0, 1, 2, 0, 2, 3 },
+            };
+            try {
+                var tex = MaskPainterIO.GenerateUvWireframe(mesh, submeshIndex: -1, size: 32);
+                Assert.IsNotNull(tex);
+                Assert.AreEqual(32, tex.width);
+                Assert.AreEqual(32, tex.height);
+                var pixels = tex.GetPixels32();
+                int lit = 0;
+                for (int i = 0; i < pixels.Length; i++) if (pixels[i].a > 0) lit++;
+                Assert.Greater(lit, 32 * 3,
+                    "A 1-unit quad with the diagonal should light at least ~4 borders worth of pixels.");
+                Object.DestroyImmediate(tex);
+            } finally {
+                Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
+        public void GenerateUvWireframe_NullMeshIsTransparentTexture() {
+            var tex = MaskPainterIO.GenerateUvWireframe(null, submeshIndex: -1, size: 16);
+            Assert.IsNotNull(tex);
+            var pixels = tex.GetPixels32();
+            for (int i = 0; i < pixels.Length; i++) {
+                Assert.AreEqual(0, pixels[i].a,
+                    "A null mesh must yield a fully transparent wireframe, not a partial / random texture.");
+            }
+            Object.DestroyImmediate(tex);
+        }
+
+        [Test]
+        public void GenerateUvWireframe_OutOfRangeSubmeshFallsBackToAll() {
+            // SubmeshRange's fallback path runs inside GenerateUvWireframe
+            // too. A quad with one submesh, asked for submesh #5, should
+            // still produce a wireframe (all submeshes) instead of a
+            // blank texture.
+            var mesh = new Mesh {
+                vertices = new[] {
+                    new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0),
+                },
+                uv = new[] {
+                    new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1),
+                },
+                triangles = new[] { 0, 1, 2 },
+            };
+            try {
+                var tex = MaskPainterIO.GenerateUvWireframe(mesh, submeshIndex: 5, size: 32);
+                var pixels = tex.GetPixels32();
+                int lit = 0;
+                for (int i = 0; i < pixels.Length; i++) if (pixels[i].a > 0) lit++;
+                Assert.Greater(lit, 0,
+                    "Out-of-range submesh must fall back to 'all' so the preview isn't mysteriously blank.");
+                Object.DestroyImmediate(tex);
+            } finally {
+                Object.DestroyImmediate(mesh);
+            }
+        }
     }
 }

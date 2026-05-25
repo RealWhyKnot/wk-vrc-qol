@@ -49,6 +49,10 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 _lastMousePos = e.mousePosition;
                 sv.Repaint();
+                // The UV crosshair / cursor-UV label in the Preview pane
+                // tracks the same raycast, so repaint the window too.
+                // Cheap: just a redraw of one IMGUI panel.
+                if (_showUvCrosshair) Repaint();
             }
 
             // Repaint phase: draw overlays.
@@ -69,6 +73,12 @@ namespace WhyKnot.AvatarQol.Tools {
                 case EventType.MouseDown:
                     if (e.button == 0) {
                         Diag(LogLevel.Trace, $"MouseDown received. _hasHit={_hasHit}, mouse={e.mousePosition}");
+                        // Dump a full ray / bake / bounds / submesh picture on
+                        // the first click of every session. If the user is in
+                        // the "every click misses" failure mode, this gives
+                        // them one log line with every coordinate-space datum
+                        // a triage needs -- no follow-up "can you log X" loop.
+                        DumpFirstMouseDown(HandleUtility.GUIPointToWorldRay(e.mousePosition), e.mousePosition);
                         if (_hasHit) {
                             _strokeInProgress = true;
                             _strokeDispatches = 0;
@@ -155,9 +165,11 @@ namespace WhyKnot.AvatarQol.Tools {
 
             float bestT = float.PositiveInfinity;
             int bestI0 = 0, bestI1 = 0, bestI2 = 0;
+            float bestU = 0f, bestV = 0f;
 
-            int subStart = _submeshIndex < 0 ? 0 : _submeshIndex;
-            int subEnd   = _submeshIndex < 0 ? _snapshotMesh.subMeshCount : Mathf.Min(_submeshIndex + 1, _snapshotMesh.subMeshCount);
+            var range = MaskPainterIO.SubmeshRange(_submeshIndex, _snapshotMesh.subMeshCount, WarnSubmeshDrift);
+            int subStart = range.start;
+            int subEnd   = range.end;
 
             for (int s = subStart; s < subEnd; s++) {
                 var tris = _snapshotMesh.GetTriangles(s);
@@ -165,10 +177,11 @@ namespace WhyKnot.AvatarQol.Tools {
                     int i0 = tris[i], i1 = tris[i + 1], i2 = tris[i + 2];
                     if (MaskPainterIO.RayTriangle(ray.origin, ray.direction,
                             _snapshotWorldVerts[i0], _snapshotWorldVerts[i1], _snapshotWorldVerts[i2],
-                            out float t, out _, out _)
+                            out float t, out float u, out float v)
                             && t < bestT) {
                         bestT = t;
                         bestI0 = i0; bestI1 = i1; bestI2 = i2;
+                        bestU = u; bestV = v;
                     }
                 }
             }
@@ -182,7 +195,24 @@ namespace WhyKnot.AvatarQol.Tools {
                 // the mesh has inverted winding. Flip toward the camera so
                 // the brush disc and overlay sit on the correct side.
                 if (Vector3.Dot(_hitNormal, ray.direction) > 0f) _hitNormal = -_hitNormal;
+
+                // UV0 at the hit, interpolated from the hit triangle. The
+                // shared mesh is the UV authority; the baked snapshot
+                // doesn't carry UVs back through skinning. The triangle
+                // indices match by construction (BakeMesh preserves the
+                // index buffer), so the same i0/i1/i2 select the right
+                // UV0 entries.
+                _hitUv = ResolveHitUv(bestI0, bestI1, bestI2, bestU, bestV);
             }
+        }
+
+        private Vector2 ResolveHitUv(int i0, int i1, int i2, float u, float v) {
+            var mesh = _renderer != null ? _renderer.sharedMesh : null;
+            if (mesh == null) return Vector2.zero;
+            var uvs = mesh.uv;
+            if (uvs == null || uvs.Length == 0) return Vector2.zero;
+            if (i0 >= uvs.Length || i1 >= uvs.Length || i2 >= uvs.Length) return Vector2.zero;
+            return MaskPainterIO.InterpolateUv(uvs[i0], uvs[i1], uvs[i2], u, v);
         }
 
         // ---- Scene drawing helpers ----
@@ -247,11 +277,20 @@ namespace WhyKnot.AvatarQol.Tools {
             // Tiny scale-up plus shader Offset -1, -1 wins the depth fight
             // against the real SkinnedMeshRenderer without visible inflation.
             var m = _renderer.transform.localToWorldMatrix * Matrix4x4.Scale(new Vector3(1.001f, 1.001f, 1.001f));
-            int subStart = _submeshIndex < 0 ? 0 : _submeshIndex;
-            int subEnd   = _submeshIndex < 0 ? _snapshotMesh.subMeshCount : Mathf.Min(_submeshIndex + 1, _snapshotMesh.subMeshCount);
-            for (int s = subStart; s < subEnd; s++) {
+            var range = MaskPainterIO.SubmeshRange(_submeshIndex, _snapshotMesh.subMeshCount, WarnSubmeshDrift);
+            for (int s = range.start; s < range.end; s++) {
                 Graphics.DrawMesh(_snapshotMesh, m, _previewMaterial, 0, sv.camera, s);
             }
+        }
+
+        // Sticky one-shot warning so the submesh-drift log doesn't fire
+        // 60 times a second from OnSceneGui. Resets on Bake() so a fresh
+        // pose snapshot can surface a new drift.
+        private bool _submeshDriftWarned;
+        private void WarnSubmeshDrift(string msg) {
+            if (_submeshDriftWarned) return;
+            _submeshDriftWarned = true;
+            Diag(LogLevel.Warn, msg);
         }
 
         // Floating HUD top-left of the Scene view. Shows live tool state.

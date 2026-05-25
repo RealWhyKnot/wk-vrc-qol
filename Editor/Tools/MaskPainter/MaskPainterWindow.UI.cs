@@ -395,9 +395,10 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawPreviewSection() {
             using (WkStyles.Section("4. Preview",
-                    "Current mask RT, with the active channel isolated when painting per-channel.")) {
+                    "Current mask RT, with the active channel isolated when painting per-channel. The UV map view overlays the mesh's UV0 islands so it's obvious which painted texels correspond to which mesh region.")) {
                 if (_maskRT == null) {
                     EditorGUILayout.LabelField("(start painting to allocate the mask buffer)", EditorStyles.centeredGreyMiniLabel);
+                    DrawUvMapToggles();
                     return;
                 }
                 // Header row: stats + refresh
@@ -414,6 +415,8 @@ namespace WhyKnot.AvatarQol.Tools {
                         RefreshCoverageStat();
                     }
                 }
+                EditorGUILayout.Space(2);
+                DrawUvMapToggles();
                 EditorGUILayout.Space(2);
                 // Centered preview rect, 300 x 300.
                 const float previewSize = 300f;
@@ -435,9 +438,114 @@ namespace WhyKnot.AvatarQol.Tools {
                         }
                         GUI.DrawTexture(rect, _maskRT, ScaleMode.ScaleToFit, false, 1f, tint, 0f, 0f);
                     }
+                    // UV map overlays (grid then wireframe then crosshair).
+                    if (_showUvGrid)      DrawUvGrid(rect);
+                    if (_showUvWireframe) DrawUvWireframe(rect);
+                    if (_showUvCrosshair && _hasHit) DrawUvCrosshair(rect, _hitUv);
                     // Border
                     DrawRectBorder(rect, new Color(0.0f, 0.0f, 0.0f, 0.7f), 1);
                 }
+                if (_showUvCrosshair) {
+                    string uvLine = _hasHit
+                        ? $"cursor UV  ·  u = {_hitUv.x:0.000}   v = {_hitUv.y:0.000}"
+                        : "cursor UV  ·  (hover the mesh in the Scene view)";
+                    EditorGUILayout.LabelField(uvLine, WkStyles.Muted);
+                }
+            }
+        }
+
+        private void DrawUvMapToggles() {
+            using (new EditorGUILayout.HorizontalScope()) {
+                EditorGUILayout.LabelField(
+                    new GUIContent("UV map",
+                        "Overlay the mesh's UV0 layout on the preview. Useful for seeing which body region a painted texel maps to, finding seams, and confirming the brush is landing where you expect."),
+                    GUILayout.Width(WkStyles.LabelColumn));
+                bool prevWire = _showUvWireframe;
+                _showUvWireframe = GUILayout.Toggle(_showUvWireframe,
+                    new GUIContent("Islands",
+                        "Trace each UV0 triangle's edges over the painted mask so island boundaries are visible. Generated once per (mesh, submesh, resolution) and cached for the rest of the session."),
+                    EditorStyles.miniButton, GUILayout.Width(70));
+                if (prevWire != _showUvWireframe) SaveEditorPrefs();
+
+                bool prevCross = _showUvCrosshair;
+                _showUvCrosshair = GUILayout.Toggle(_showUvCrosshair,
+                    new GUIContent("Cursor",
+                        "Mark the UV0 coordinate currently under the Scene view raycast with a crosshair on the preview. Lets you confirm a click maps to the texel you expect before painting."),
+                    EditorStyles.miniButton, GUILayout.Width(70));
+                if (prevCross != _showUvCrosshair) SaveEditorPrefs();
+
+                bool prevGrid = _showUvGrid;
+                _showUvGrid = GUILayout.Toggle(_showUvGrid,
+                    new GUIContent("Grid",
+                        "Draw an 8x8 reference grid over the preview at UV 1/8 increments. Useful for spotting which atlas tile a region lives in when several submeshes share a [0,1] UV space."),
+                    EditorStyles.miniButton, GUILayout.Width(70));
+                if (prevGrid != _showUvGrid) SaveEditorPrefs();
+
+                GUILayout.FlexibleSpace();
+            }
+        }
+
+        private void EnsureUvWireframeCache() {
+            if (_renderer == null) return;
+            var mesh = _renderer.sharedMesh;
+            if (mesh == null) return;
+            int meshId = mesh.GetInstanceID();
+            // Single source of truth for "what submesh did the cache bake".
+            int cacheSubmesh = _submeshIndex;
+            int cacheSize    = Mathf.Clamp(_resolution, 256, 2048);
+            if (_uvWireframeTex != null
+                    && _uvWireframeMeshId == meshId
+                    && _uvWireframeSubmesh == cacheSubmesh
+                    && _uvWireframeSize == cacheSize) {
+                return;
+            }
+            if (_uvWireframeTex != null) DestroyImmediate(_uvWireframeTex);
+            _uvWireframeTex = MaskPainterIO.GenerateUvWireframe(mesh, cacheSubmesh, cacheSize);
+            _uvWireframeMeshId  = meshId;
+            _uvWireframeSubmesh = cacheSubmesh;
+            _uvWireframeSize    = cacheSize;
+        }
+
+        private void DrawUvWireframe(Rect rect) {
+            EnsureUvWireframeCache();
+            if (_uvWireframeTex == null) return;
+            // White-alpha texture tinted via GUI.DrawTexture's tint param.
+            // Cyan reads against the orange grayscale mask and the per-channel
+            // tints without clashing; alpha 0.55 keeps the painted mask
+            // visible underneath.
+            var tint = new Color(0.55f, 0.95f, 1f, 0.85f);
+            GUI.DrawTexture(rect, _uvWireframeTex, ScaleMode.ScaleToFit, true, 1f, tint, 0f, 0f);
+        }
+
+        private static void DrawUvCrosshair(Rect rect, Vector2 uv) {
+            if (Event.current.type != EventType.Repaint) return;
+            // Map UV [0,1] -> rect pixel space, flipping V so islands sit
+            // upright the same way they would in a texture browser.
+            float px = rect.x + uv.x * rect.width;
+            float py = rect.y + (1f - uv.y) * rect.height;
+            // Out-of-canvas UV (rare with InterpolateUv but possible with
+            // tiled UVs) just renders nothing.
+            if (px < rect.x || px > rect.xMax || py < rect.y || py > rect.yMax) return;
+            var c = new Color(1f, 0.95f, 0.20f, 0.95f);
+            // 1px crosshair lines, gap in the center so the exact texel is visible.
+            EditorGUI.DrawRect(new Rect(px - 8, py, 6, 1), c);
+            EditorGUI.DrawRect(new Rect(px + 3, py, 6, 1), c);
+            EditorGUI.DrawRect(new Rect(px, py - 8, 1, 6), c);
+            EditorGUI.DrawRect(new Rect(px, py + 3, 1, 6), c);
+            // Center pixel
+            EditorGUI.DrawRect(new Rect(px - 0.5f, py - 0.5f, 1, 1), c);
+        }
+
+        private static void DrawUvGrid(Rect rect) {
+            if (Event.current.type != EventType.Repaint) return;
+            var line = new Color(1f, 1f, 1f, 0.10f);
+            // 8x8 grid -> 7 inner lines per axis. Skip the outer border
+            // since the rect's own border handles that.
+            for (int i = 1; i < 8; i++) {
+                float fx = rect.x + rect.width * (i / 8f);
+                float fy = rect.y + rect.height * (i / 8f);
+                EditorGUI.DrawRect(new Rect(fx, rect.y, 1, rect.height), line);
+                EditorGUI.DrawRect(new Rect(rect.x, fy, rect.width, 1), line);
             }
         }
 
