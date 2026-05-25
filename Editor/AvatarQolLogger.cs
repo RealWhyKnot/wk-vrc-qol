@@ -16,7 +16,6 @@
 // bump on release. CI also enforces this via .github/workflows/version-guard.yml.
 
 using UnityEditor;
-using UnityEditor.PackageManager;
 using WhyKnot.Core.Logging;
 
 namespace WhyKnot.AvatarQol {
@@ -42,7 +41,7 @@ namespace WhyKnot.AvatarQol {
             // under Assets/ instead of installed via VPM. Fall back to a
             // sentinel rather than throwing -- a missing version label in
             // the log header is recoverable; an Editor-init exception is not.
-            var info = PackageInfo.FindForAssembly(typeof(AvatarQolLogger).Assembly);
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(AvatarQolLogger).Assembly);
             return info != null && !string.IsNullOrEmpty(info.version) ? info.version : "unknown";
         }
     }
