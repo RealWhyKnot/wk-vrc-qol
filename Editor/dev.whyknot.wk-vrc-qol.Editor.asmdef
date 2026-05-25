@@ -7,7 +7,8 @@
         "VRC.SDKBase.Editor",
         "VRC.SDK3A",
         "VRC.SDK3.Dynamics.PhysBone",
-        "VRC.Dynamics"
+        "VRC.Dynamics",
+        "nadena.dev.ndmf"
     ],
     "includePlatforms": [
         "Editor"
@@ -23,6 +24,16 @@
             "name": "com.vrchat.avatars",
             "expression": "3.0.0",
             "define": "VRC_SDK_VRCSDK3"
+        },
+        {
+            "name": "com.vrchat.avatars",
+            "expression": "3.5.0",
+            "define": "WK_VRC_SDK_AVATARS"
+        },
+        {
+            "name": "nadena.dev.ndmf",
+            "expression": "1.5.0",
+            "define": "WK_NDMF"
         }
     ],
     "noEngineReferences": false
