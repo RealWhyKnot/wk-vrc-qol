@@ -28,6 +28,7 @@ All notable changes to this project will be documented in this file. Format foll
 
 ### Fixed
 - `PhysBoneReinitHook.cs` no longer passes a Unity `Component` as the second argument to `AvatarQolLogger.Instance.Warning(...)`. Side effect of the 1.1.0-beta.3 mass migration from `Debug.LogWarning(msg, contextObject)` -- the regex stripped the `Debug.LogWarning(` prefix but left the trailing context argument behind, which clashed with `WkLogger.Warning`'s `[CallerMemberName] string member = ""` parameter and failed CS1503. The context object reference is dropped; the offending component's `name` is already interpolated into the message.
+- **logger:** Qualify PackageInfo to avoid ambiguity with UnityEditor.PackageInfo (fead5a3)
 
 ### Removed
 - Auto Mesh Fixes pipeline (`AutoTightenToBody`, `WhyKnotMeshFixController`, the Mesh Fix window, both build hooks, the garment-tighten and body-hide operations). The garment-tighten output never produced a usable result in practice. Scenes that still hold an `AutoTightenToBody` component will log a missing-script warning on next open -- remove the stub component to clear it.
