@@ -57,7 +57,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private List<TweakSnapshot> _tweakSnapshots;
         private float _tweakPull = 1f, _tweakSpring = 1f, _tweakStiff = 1f, _tweakGravity = 1f, _tweakRadius = 1f;
 
-        private const string WikiUrl = "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#physbone-preset";
+        private const string WikiUrl = "https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Tools-Overview#physbone-preset";
 
         // ------ Public entry -----------------------------------------------
 

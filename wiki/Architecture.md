@@ -1,6 +1,6 @@
 # Architecture
 
-The framework is small on purpose. There's no third-party reflection (unlike sister project [vrcfury-qol](https://github.com/RealWhyKnot/vrcfury-qol)), so the framework is just a place to keep cross-tool helpers and a consistent menu structure. Each tool is otherwise self-contained.
+The framework is small on purpose. There's no third-party reflection (unlike sister project [wk-vrcfury-qol](https://github.com/RealWhyKnot/wk-vrcfury-qol)), so the framework is just a place to keep cross-tool helpers and a consistent menu structure. Each tool is otherwise self-contained.
 
 ## Directory layout
 
@@ -20,7 +20,7 @@ Runtime/
 
 Tools register entry points via Unity's standard `[MenuItem]` attributes. The framework doesn't impose a registration API -- it would be over-engineered for the current scope.
 
-Convention: every tool's top-level menu entry lives under `Tools/WhyKnot/vrc-avatar-qol/<Name>...`. If the tool has a sensible right-click trigger, it also registers `GameObject/WhyKnot/vrc-avatar-qol/<Action>...` (visible in the hierarchy right-click menu, fires once per multi-select).
+Convention: every tool's top-level menu entry lives under `Tools/WhyKnot/wk-vrc-qol/<Name>...`. If the tool has a sensible right-click trigger, it also registers `GameObject/WhyKnot/wk-vrc-qol/<Action>...` (visible in the hierarchy right-click menu, fires once per multi-select).
 
 Use components only when the user's intent would otherwise be lost by re-importing source assets from Blender, such as generated mesh/blendshape fixes. Tools that add durable Unity objects/components directly to the avatar, such as PhysBone Preset, can stay direct setup tools without storage components. Component-driven tools should keep the component inspector minimal: the component is durable storage, while the main user flow lives in an Avatar QoL window with clear labels, validation, and preview controls.
 
@@ -70,4 +70,4 @@ try {
 }
 ```
 
-Same pattern as vrcfury-qol uses.
+Same pattern as wk-vrcfury-qol uses.

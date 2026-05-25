@@ -4,7 +4,7 @@ Every shipping tool, where to find it, what it does.
 
 ## Weight Sanity Check
 
-**Where:** *Tools -> WhyKnot -> vrc-avatar-qol -> Weight Sanity Check...*, or right-click an avatar in the hierarchy -> *WhyKnot -> vrc-avatar-qol -> Check weights...* (pre-fills the picker with the selected Animator).
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Weight Sanity Check...*, or right-click an avatar in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Check weights...* (pre-fills the picker with the selected Animator).
 
 **What it does:** Detects the most common Blender-weight-transfer mistake on humanoid avatars: vertices on one side of the avatar (a left-leg garter, say) picking up non-trivial weight from a bone on the other side (right thigh). When the avatar moves, the bad vertices stretch or follow the wrong limb.
 
@@ -55,7 +55,7 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 
 ## PhysBone Clipping Risks
 
-**Where:** *Tools -> WhyKnot -> vrc-avatar-qol -> PhysBone Clipping Risks...*, or right-click a mesh/avatar in the hierarchy -> *WhyKnot -> vrc-avatar-qol -> Check PhysBone clipping...*.
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> PhysBone Clipping Risks...*, or right-click a mesh/avatar in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Check PhysBone clipping...*.
 
 **What it does:** Runs the heavier PhysBone clipping-risk estimate as its own explicit tool. It checks one `SkinnedMeshRenderer` at a time so normal Weight Sanity Check scans stay fast.
 
@@ -74,7 +74,7 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 
 ## Auto Mesh Fixes
 
-**Where:** *Tools -> WhyKnot -> vrc-avatar-qol -> Auto Mesh Fixes -> Open...*, or right-click an avatar/mesh in the hierarchy -> *WhyKnot -> vrc-avatar-qol -> Auto Mesh Fixes...*.
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes -> Open...*, or right-click an avatar/mesh in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes...*.
 
 **What it does:** Stores nondestructive clothing/body mesh fix intent on editor-only components, then generates temporary mesh clones with blendshapes during preview, play mode, and upload. The UI is the main workflow; the component inspector only shows status and an **Open Auto Mesh Fixes** button.
 
@@ -89,7 +89,7 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 
 ## PhysBone Preset (early)
 
-**Where:** *Tools -> WhyKnot -> vrc-avatar-qol -> Apply PhysBone Preset...*, or right-click a selection of bones in the hierarchy -> *WhyKnot -> vrc-avatar-qol -> Apply PhysBone preset...* (pre-fills the bone list).
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Apply PhysBone Preset...*, or right-click a selection of bones in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Apply PhysBone preset...* (pre-fills the bone list).
 
 **What it does:** Sets up VRChat PhysBones on the selected bones using a *preset* -- a smart template that reads a structural analysis of the selection and adapts. Built-in presets:
 
@@ -116,7 +116,7 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 
 ## Bone Merger
 
-**Where:** *Tools -> WhyKnot -> vrc-avatar-qol -> Bone Merger...*, or right-click an avatar in the hierarchy -> *WhyKnot -> vrc-avatar-qol -> Merge bones...*.
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Bone Merger...*, or right-click an avatar in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Merge bones...*.
 
 **What it does:** Collapses a stray duplicate bone (typical case: Blender / FBX export leaves a `Boob_L.001` sitting under `Boob_L`) onto the bone it should have been part of. Every skin weight on every `SkinnedMeshRenderer` under the avatar is redirected from the duplicate onto the keeper, then the duplicate bone is deleted from the rig.
 

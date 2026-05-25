@@ -12,8 +12,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class PhysBoneClippingRiskTool {
 
-        private const string ToolsMenuPath = "Tools/WhyKnot/vrc-avatar-qol/PhysBone Clipping Risks...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Check PhysBone clipping...";
+        private const string ToolsMenuPath = "Tools/WhyKnot/wk-vrc-qol/PhysBone Clipping Risks...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Check PhysBone clipping...";
 
         static PhysBoneClippingRiskTool() { }
 

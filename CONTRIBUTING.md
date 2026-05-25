@@ -4,12 +4,12 @@ Welcome, and thanks for taking an interest. Bug reports, feature requests, and p
 
 ## Before you start
 
-- Skim the [Architecture](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Architecture) wiki page for the framework conventions.
-- For a bug report, check the [Troubleshooting](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Troubleshooting) page first.
+- Skim the [Architecture](https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Architecture) wiki page for the framework conventions.
+- For a bug report, check the [Troubleshooting](https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Troubleshooting) page first.
 
 ## Setting up the dev loop
 
-There's no build system here; `vrc-avatar-qol` is a flat folder of `.cs` files compiled by Unity itself.
+There's no build system here; `wk-vrc-qol` is a flat folder of `.cs` files compiled by Unity itself.
 
 **Prerequisites:**
 
@@ -21,12 +21,12 @@ There's no build system here; `vrc-avatar-qol` is a flat folder of `.cs` files c
 
 Windows (PowerShell, run as admin):
 ```powershell
-New-Item -ItemType Junction -Path "C:\Path\To\YourProject\Assets\AvatarQol" -Target "C:\Path\To\vrc-avatar-qol\Editor"
+New-Item -ItemType Junction -Path "C:\Path\To\YourProject\Assets\AvatarQol" -Target "C:\Path\To\wk-vrc-qol\Editor"
 ```
 
 Linux / macOS:
 ```sh
-ln -s /path/to/vrc-avatar-qol/Editor /path/to/YourProject/Assets/AvatarQol
+ln -s /path/to/wk-vrc-qol/Editor /path/to/YourProject/Assets/AvatarQol
 ```
 
 Focus Unity once after the first install so it compiles the scripts.
@@ -39,7 +39,7 @@ The wiki is **source-controlled at `wiki/`** in this repo. That means:
 - **Do not edit on the github.com Wiki UI.** Web edits get overwritten the next time the sync workflow runs.
 - On every push to `main` that touches `wiki/**`, the [wiki-sync workflow](.github/workflows/wiki-sync.yml) mirrors the changes to the GitHub Wiki repo.
 
-**One-time wiki bootstrap.** GitHub doesn't create the wiki repo until a maintainer creates the first page through the web UI. If you see a `wiki repo doesn't exist yet` warning in the wiki-sync workflow, visit `https://github.com/RealWhyKnot/vrc-avatar-qol/wiki` and click **Create the first page** with any content (it'll be overwritten on the next sync). After that, every push that touches `wiki/**` syncs automatically.
+**One-time wiki bootstrap.** GitHub doesn't create the wiki repo until a maintainer creates the first page through the web UI. If you see a `wiki repo doesn't exist yet` warning in the wiki-sync workflow, visit `https://github.com/RealWhyKnot/wk-vrc-qol/wiki` and click **Create the first page** with any content (it'll be overwritten on the next sync). After that, every push that touches `wiki/**` syncs automatically.
 
 ## Submitting a PR
 

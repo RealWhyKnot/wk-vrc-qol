@@ -23,7 +23,7 @@ namespace WhyKnot.AvatarQol.Tools {
         [SerializeField] private float _clearanceMargin = 0.025f;
         [SerializeField] private int _maxIssuesPerPhysBone = 8;
 
-        private const string WikiUrl = "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#physbone-clipping-risks";
+        private const string WikiUrl = "https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Tools-Overview#physbone-clipping-risks";
 
         private readonly List<PhysBoneClippingAnalyzer.Issue> _issues =
             new List<PhysBoneClippingAnalyzer.Issue>();

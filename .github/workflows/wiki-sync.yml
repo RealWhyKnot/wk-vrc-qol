@@ -1,6 +1,6 @@
 name: Sync wiki
 
-# Mirrors wiki/ into the GitHub Wiki repo (RealWhyKnot/vrc-avatar-qol.wiki.git).
+# Mirrors wiki/ into the GitHub Wiki repo (RealWhyKnot/wk-vrc-qol.wiki.git).
 # The wiki repo only materialises after a maintainer creates the first page via
 # the web UI; before that, the clone step below fails fast and skips the sync.
 # See CONTRIBUTING.md for the one-time bootstrap.

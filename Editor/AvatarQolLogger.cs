@@ -1,8 +1,8 @@
 // AvatarQolLogger.cs
 //
-// vrc-avatar-qol's registered WkLogger instance. Every diagnostic line
+// wk-vrc-qol's registered WkLogger instance. Every diagnostic line
 // in this package goes through AvatarQolLogger.Instance so the session
-// file at %LocalAppData%/WhyKnot/Logs/dev.whyknot.avatar-qol/session-*.log
+// file at %LocalAppData%/WhyKnot/Logs/dev.whyknot.wk-vrc-qol/session-*.log
 // captures the same content the user sees in the Unity Console -- plus
 // Debug-level entries that stay file-only.
 //
@@ -23,7 +23,7 @@ namespace WhyKnot.AvatarQol {
     [InitializeOnLoad]
     public static class AvatarQolLogger {
 
-        public const string PackageId = "dev.whyknot.avatar-qol";
+        public const string PackageId = "dev.whyknot.wk-vrc-qol";
         public const string DisplayName = "Avatar QoL";
 
         public static readonly string Version = ResolveVersion();

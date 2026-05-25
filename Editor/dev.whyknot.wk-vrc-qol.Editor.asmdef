@@ -1,8 +1,8 @@
 {
-    "name": "dev.whyknot.avatar-qol.Editor",
+    "name": "dev.whyknot.wk-vrc-qol.Editor",
     "rootNamespace": "WhyKnot.AvatarQol",
     "references": [
-        "dev.whyknot.avatar-qol.Runtime",
+        "dev.whyknot.wk-vrc-qol.Runtime",
         "VRC.SDKBase.Editor.BuildPipeline",
         "VRC.SDKBase.Editor",
         "VRC.SDK3A",

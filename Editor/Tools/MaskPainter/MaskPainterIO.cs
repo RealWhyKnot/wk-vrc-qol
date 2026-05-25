@@ -14,7 +14,7 @@ using System.Runtime.CompilerServices;
 using UnityEditor;
 using UnityEngine;
 
-[assembly: InternalsVisibleTo("dev.whyknot.avatar-qol.Tests.Editor")]
+[assembly: InternalsVisibleTo("dev.whyknot.wk-vrc-qol.Tests.Editor")]
 
 namespace WhyKnot.AvatarQol.Tools {
 
@@ -24,7 +24,7 @@ namespace WhyKnot.AvatarQol.Tools {
         // Shader loading
         // -----------------------------------------------------------------
 
-        private const string ShaderFolder = "Packages/dev.whyknot.avatar-qol/Editor/Tools/MaskPainter/Shaders";
+        private const string ShaderFolder = "Packages/dev.whyknot.wk-vrc-qol/Editor/Tools/MaskPainter/Shaders";
 
         private static Shader _brushShader;
         private static Shader _previewShader;

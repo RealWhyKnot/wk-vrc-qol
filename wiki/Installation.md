@@ -1,8 +1,8 @@
 # Installation
 
-`vrc-avatar-qol` ships as a VPM package (`dev.whyknot.avatar-qol`), Editor-only,
+`wk-vrc-qol` ships as a VPM package (`dev.whyknot.wk-vrc-qol`), Editor-only,
 hard-depending on `com.vrchat.avatars` (>= 3.5.0). Unity compiles it into a
-dedicated `dev.whyknot.avatar-qol.Editor` assembly and the `Editor/` folder
+dedicated `dev.whyknot.wk-vrc-qol.Editor` assembly and the `Editor/` folder
 never leaks into runtime builds.
 
 ## VCC (recommended)
@@ -22,9 +22,9 @@ then this package shows up under **Manage Project -> Add Package**.
 
 ## Manual install (non-VCC projects)
 
-Download `dev.whyknot.avatar-qol-X.Y.Z.zip` from the
-[latest release](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/latest),
-unzip into `Packages/dev.whyknot.avatar-qol/` so `Packages/dev.whyknot.avatar-qol/package.json`
+Download `dev.whyknot.wk-vrc-qol-X.Y.Z.zip` from the
+[latest release](https://github.com/RealWhyKnot/wk-vrc-qol/releases/latest),
+unzip into `Packages/dev.whyknot.wk-vrc-qol/` so `Packages/dev.whyknot.wk-vrc-qol/package.json`
 exists, and Unity's Package Manager picks it up on next refresh.
 
 ## Beta / pre-release builds
@@ -33,9 +33,9 @@ Pre-release tags follow the form `vX.Y.Z-betaN` and ship as GitHub Releases
 marked **Pre-release**. They are NOT picked up by the VPM listing automatically.
 
 To pull a beta:
-- Download the `dev.whyknot.avatar-qol-X.Y.Z-betaN.zip` from the
-  [pre-releases page](https://github.com/RealWhyKnot/vrc-avatar-qol/releases?q=prerelease%3Atrue)
-  and unzip into `Packages/dev.whyknot.avatar-qol/` as in Manual install above.
+- Download the `dev.whyknot.wk-vrc-qol-X.Y.Z-betaN.zip` from the
+  [pre-releases page](https://github.com/RealWhyKnot/wk-vrc-qol/releases?q=prerelease%3Atrue)
+  and unzip into `Packages/dev.whyknot.wk-vrc-qol/` as in Manual install above.
 - Or, in VCC, use **Settings -> Packages -> Show Pre-release Packages**, then
   the version dropdown for Avatar QoL surfaces the pre-release builds.
 
@@ -51,14 +51,14 @@ project, then symlink (or junction) the package root into your test project's
 **Windows (PowerShell, run as administrator):**
 ```powershell
 New-Item -ItemType Junction `
-  -Path "C:\Path\To\YourProject\Packages\dev.whyknot.avatar-qol" `
-  -Target "C:\Path\To\vrc-avatar-qol"
+  -Path "C:\Path\To\YourProject\Packages\dev.whyknot.wk-vrc-qol" `
+  -Target "C:\Path\To\wk-vrc-qol"
 ```
 
 **Linux / macOS:**
 ```sh
-ln -s /path/to/vrc-avatar-qol \
-      /path/to/YourProject/Packages/dev.whyknot.avatar-qol
+ln -s /path/to/wk-vrc-qol \
+      /path/to/YourProject/Packages/dev.whyknot.wk-vrc-qol
 ```
 
 Unity treats it as a local-disk package and recompiles on every script change.
@@ -74,5 +74,5 @@ Unity treats it as a local-disk package and recompiles on every script change.
 ## Uninstalling
 
 In VCC: **Manage Project** -> remove **Avatar QoL**. Manual installs: delete
-the `Packages/dev.whyknot.avatar-qol/` folder. There are no persistent
+the `Packages/dev.whyknot.wk-vrc-qol/` folder. There are no persistent
 EditorPrefs keys to clean up.

@@ -47,7 +47,7 @@ namespace WhyKnot.AvatarQol.Tools {
         [SerializeField] private bool _deleteMergedBones = true;
         [SerializeField] private bool _reparentChildren  = true;
 
-        private const string WikiUrl = "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#bone-merger";
+        private const string WikiUrl = "https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Tools-Overview#bone-merger";
 
         private string _resultSummary = "";
         private readonly List<string> _resultDetail = new List<string>();

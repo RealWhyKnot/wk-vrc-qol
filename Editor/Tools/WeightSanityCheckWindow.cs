@@ -111,7 +111,7 @@ namespace WhyKnot.AvatarQol.Tools {
         // Per-issue expansion in the compact issue rows.
         private readonly HashSet<int> _expandedIssueRows = new HashSet<int>();
 
-        private const string WikiUrl = "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#weight-sanity-check";
+        private const string WikiUrl = "https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Tools-Overview#weight-sanity-check";
 
         private readonly List<DetectedIssue> _issues = new List<DetectedIssue>();
         // Tracked per scan so we can offer a "Enable Read/Write on these N

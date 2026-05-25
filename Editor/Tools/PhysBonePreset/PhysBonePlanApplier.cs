@@ -1,7 +1,7 @@
 // PhysBonePlanApplier.cs
 //
 // The only file that touches VRC SDK types directly. Wrapped in
-// #if VRC_SDK_VRCSDK3 so the rest of vrc-avatar-qol still compiles when
+// #if VRC_SDK_VRCSDK3 so the rest of wk-vrc-qol still compiles when
 // the SDK isn't installed; outside that guard we expose a stub that
 // reports "SDK not detected" so the UI can warn rather than crash.
 //

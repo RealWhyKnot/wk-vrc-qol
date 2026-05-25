@@ -1,5 +1,5 @@
 {
-  "name": "dev.whyknot.avatar-qol.Runtime",
+  "name": "dev.whyknot.wk-vrc-qol.Runtime",
   "rootNamespace": "WhyKnot.AvatarQol",
   "references": [
     "VRC.SDKBase"

@@ -4,9 +4,9 @@
 // itself lives in MaskPainterWindow.cs.
 //
 // Two ways to open it:
-//   1. Tools/WhyKnot/vrc-avatar-qol/Paint Mask...
+//   1. Tools/WhyKnot/wk-vrc-qol/Paint Mask...
 //   2. Right-click a GameObject with a SkinnedMeshRenderer in the
-//      hierarchy -> "WhyKnot/vrc-avatar-qol/Paint mask..." -- pre-fills
+//      hierarchy -> "WhyKnot/wk-vrc-qol/Paint mask..." -- pre-fills
 //      the window with that renderer.
 
 using UnityEditor;
@@ -17,8 +17,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class MaskPainterTool {
 
-        private const string ToolsMenuPath      = "Tools/WhyKnot/vrc-avatar-qol/Paint Mask...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Paint mask...";
+        private const string ToolsMenuPath      = "Tools/WhyKnot/wk-vrc-qol/Paint Mask...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Paint mask...";
 
         static MaskPainterTool() { /* registration happens via [MenuItem] below */ }
 

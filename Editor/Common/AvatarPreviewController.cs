@@ -182,10 +182,10 @@ namespace WhyKnot.AvatarQol.Intent {
             AvatarIntentSessionState.SetPreviewActive(false);
         }
 
-        [MenuItem("Tools/WhyKnot/vrc-avatar-qol/Stop Intent Preview", false, 2102)]
+        [MenuItem("Tools/WhyKnot/wk-vrc-qol/Stop Intent Preview", false, 2102)]
         private static void StopPreviewMenu() => StopPreview();
 
-        [MenuItem("Tools/WhyKnot/vrc-avatar-qol/Stop Intent Preview", true)]
+        [MenuItem("Tools/WhyKnot/wk-vrc-qol/Stop Intent Preview", true)]
         private static bool StopPreviewMenuValidate() => IsPreviewing;
 
         private static void RememberPreview() {

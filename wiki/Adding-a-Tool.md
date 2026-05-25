@@ -16,8 +16,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class MyTool {
 
-        private const string ToolsMenuPath      = "Tools/WhyKnot/vrc-avatar-qol/My Tool...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Run my tool...";
+        private const string ToolsMenuPath      = "Tools/WhyKnot/wk-vrc-qol/My Tool...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Run my tool...";
 
         static MyTool() { /* registration via [MenuItem] below */ }
 
@@ -74,10 +74,10 @@ internal sealed class MyToolWindow : EditorWindow {
 
 ## Conventions
 
-- **Menu paths.** Top-level: `Tools/WhyKnot/vrc-avatar-qol/<Name>...`. Hierarchy right-click: `GameObject/WhyKnot/vrc-avatar-qol/<Action>...` with priority `49` (places the entry just above Unity's "Center On Children" group).
+- **Menu paths.** Top-level: `Tools/WhyKnot/wk-vrc-qol/<Name>...`. Hierarchy right-click: `GameObject/WhyKnot/wk-vrc-qol/<Action>...` with priority `49` (places the entry just above Unity's "Center On Children" group).
 - **Validators.** For hierarchy menu items, always pair with a `[MenuItem(..., true)]` validator that disables the entry when the selection isn't a fit. Saves users from clicking through to an error dialog.
 - **Read-only by default.** Tools that only inspect / report don't need Undo. Tools that mutate state must wrap operations in `Undo.SetCurrentGroupName` + `Undo.CollapseUndoOperations` so `Ctrl+Z` reverts the whole operation.
-- **No `[CustomEditor]` overrides.** Stay out of Unity's component drawers -- tools should open a window or print to console, not hijack the inspector. (vrcfury-qol uses an inspector overlay because it has to coexist with VRCFury's own drawer; this repo doesn't have that constraint.)
+- **No `[CustomEditor]` overrides.** Stay out of Unity's component drawers -- tools should open a window or print to console, not hijack the inspector. (wk-vrcfury-qol uses an inspector overlay because it has to coexist with VRCFury's own drawer; this repo doesn't have that constraint.)
 - **Defensive scans.** Tools that walk a lot of geometry should use the modern `Mesh.GetAllBoneWeights()` / `GetBonesPerVertex()` APIs (support >4 bones per vertex) and check `mesh.isReadable` before reading vertices on imported assets.
 
 ## Using HumanoidSideMap

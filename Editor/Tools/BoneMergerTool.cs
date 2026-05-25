@@ -13,8 +13,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class BoneMergerTool {
 
-        private const string ToolsMenuPath      = "Tools/WhyKnot/vrc-avatar-qol/Bone Merger...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Merge bones...";
+        private const string ToolsMenuPath      = "Tools/WhyKnot/wk-vrc-qol/Bone Merger...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Merge bones...";
 
         static BoneMergerTool() { /* registration via [MenuItem] below */ }
 

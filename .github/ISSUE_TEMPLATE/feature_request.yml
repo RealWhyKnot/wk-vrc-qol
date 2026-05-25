@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to suggest something. Skim the [wiki](https://github.com/RealWhyKnot/vrc-avatar-qol/wiki) first to check whether the behaviour already exists or has been considered.
+        Thanks for taking the time to suggest something. Skim the [wiki](https://github.com/RealWhyKnot/wk-vrc-qol/wiki) first to check whether the behaviour already exists or has been considered.
 
   - type: textarea
     id: problem

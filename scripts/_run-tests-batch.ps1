@@ -5,8 +5,8 @@ $ErrorActionPreference = 'Continue'
 
 $unity   = 'C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Unity.exe'
 $project = 'D:\WhyKnot Stuff\VRChat\Avatars\Ume'
-$results = Join-Path $env:TEMP 'avatar-qol-test-results.xml'
-$log     = Join-Path $env:TEMP 'avatar-qol-test-unity.log'
+$results = Join-Path $env:TEMP 'wk-vrc-qol-test-results.xml'
+$log     = Join-Path $env:TEMP 'wk-vrc-qol-test-unity.log'
 
 if (Test-Path $results) { Remove-Item $results -Force }
 if (Test-Path $log)     { Remove-Item $log -Force }
@@ -22,7 +22,7 @@ $argList = @(
     '-nographics',
     '-runTests',
     '-testPlatform', 'EditMode',
-    '-assemblyNames', 'dev.whyknot.avatar-qol.Tests.Editor;dev.whyknot.core.Tests.Editor',
+    '-assemblyNames', 'dev.whyknot.wk-vrc-qol.Tests.Editor;dev.whyknot.core.Tests.Editor',
     '-testResults', $results,
     '-logFile', $log,
     '-quit'

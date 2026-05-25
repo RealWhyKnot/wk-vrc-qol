@@ -108,7 +108,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         // ---- Prefs keys ----
 
-        private const string PrefsPrefix              = "dev.whyknot.avatar-qol.MaskPainter.";
+        private const string PrefsPrefix              = "dev.whyknot.wk-vrc-qol.MaskPainter.";
         private const string PrefsRadius              = PrefsPrefix + "Radius";
         private const string PrefsStrength            = PrefsPrefix + "Strength";
         private const string PrefsHardness            = PrefsPrefix + "Hardness";
@@ -124,7 +124,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private const string PrefsShowSymmetryPlane   = PrefsPrefix + "ShowSymmetryPlane";
 
         private const string WikiUrl =
-            "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#paint-mask";
+            "https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Tools-Overview#paint-mask";
 
         // ---- Types ----
 

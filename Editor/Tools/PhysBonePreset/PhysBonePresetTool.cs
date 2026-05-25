@@ -4,9 +4,9 @@
 // itself lives in PhysBonePresetWindow.cs.
 //
 // Two ways to open it:
-//   1. Tools/WhyKnot/vrc-avatar-qol/Apply PhysBone Preset...
+//   1. Tools/WhyKnot/wk-vrc-qol/Apply PhysBone Preset...
 //   2. Right-click bones in the hierarchy →
-//      WhyKnot/vrc-avatar-qol/Apply PhysBone preset...
+//      WhyKnot/wk-vrc-qol/Apply PhysBone preset...
 //      (pre-fills the window with the selected Transforms)
 
 using UnityEditor;
@@ -17,8 +17,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class PhysBonePresetTool {
 
-        private const string ToolsMenuPath      = "Tools/WhyKnot/vrc-avatar-qol/Apply PhysBone Preset...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/vrc-avatar-qol/Apply PhysBone preset...";
+        private const string ToolsMenuPath      = "Tools/WhyKnot/wk-vrc-qol/Apply PhysBone Preset...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Apply PhysBone preset...";
 
         static PhysBonePresetTool() { /* registration via [MenuItem] below */ }
 

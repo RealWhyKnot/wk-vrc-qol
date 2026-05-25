@@ -1,8 +1,8 @@
-# vrc-avatar-qol Wiki
+# wk-vrc-qol Wiki
 
-Editor tools for VRChat avatars -- catches subtle issues that don't surface until they're already in your scene. Sibling repo to [vrcfury-qol](https://github.com/RealWhyKnot/vrcfury-qol): where vrcfury-qol lives next to VRCFury components, this repo is for general avatar QoL -- meshes, weights, bones, materials.
+Editor tools for VRChat avatars -- catches subtle issues that don't surface until they're already in your scene. Sibling repo to [wk-vrcfury-qol](https://github.com/RealWhyKnot/wk-vrcfury-qol): where wk-vrcfury-qol lives next to VRCFury components, this repo is for general avatar QoL -- meshes, weights, bones, materials.
 
-The [README](https://github.com/RealWhyKnot/vrc-avatar-qol/blob/main/README.md) is the quick-start; this wiki goes deeper.
+The [README](https://github.com/RealWhyKnot/wk-vrc-qol/blob/main/README.md) is the quick-start; this wiki goes deeper.
 
 ## How it works (60 seconds)
 

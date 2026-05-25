@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to vrc-avatar-qol. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [Semantic Versioning](https://semver.org/).
+All notable changes to wk-vrc-qol. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [Semantic Versioning](https://semver.org/).
 
 The most recent release is at the top.
 
@@ -11,11 +11,15 @@ The most recent release is at the top.
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Breaking
+- Package ID renamed from `dev.whyknot.avatar-qol` to `dev.whyknot.wk-vrc-qol`. GitHub repo renamed from `RealWhyKnot/vrc-avatar-qol` to `RealWhyKnot/wk-vrc-qol`. VCC has no in-place upgrade path between different package IDs -- remove the old package and add the new one. Menu entries move from `Tools/WhyKnot/vrc-avatar-qol/...` to `Tools/WhyKnot/wk-vrc-qol/...` (same for `GameObject/WhyKnot/wk-vrc-qol/...` right-click entries). Mask Painter EditorPrefs keys are re-prefixed too, so the brush radius / strength / symmetry / etc. user settings reset to defaults on first use after upgrade.
+
+### License
+- `LICENSE` now carries a GPL-3.0 Section 7 author-reservation clause: the copyright holder (WhyKnot) reserves the right to incorporate this software into closed-source works distributed by the copyright holder, in particular VRChat avatar uploads. Recipients' GPL rights and obligations are unchanged.
 
 ---
 
-## [v1.2.0-beta.1](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/tag/v1.2.0-beta.1) -- 2026-05-25
+## [v1.2.0-beta.1](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.2.0-beta.1) -- 2026-05-25
 
 ### Changed
 - Bundled `Editor/Internal/` refreshed from the wk-core 1.2.0 source. Picks up an NDMF-`ErrorReport`-shaped scope stack on top of `WkLogger` (`WkLogContext`, `BeginTask`, `InfoBlock` / `WarningBlock` / `ErrorBlock`); new utility helpers (`MeshUtility`, `BlendShapeUtility`, `FolderUtility`, `UndoUtility`); new reflection helpers (`WkReflection`, `WkReflectionCache`, `WkGlobalId`, `WkJsonClone`); an `EditorApplication.update` ticker (`WkEditorTicker`) and a typed `EditorPrefs` wrapper (`WkEditorPrefs` + `WkSessionState`); a `WkToolWindow` / `WkInspectorEditor` / `WkMenuPaths` scaffolding tier; thirteen new `WkStyles` primitives (`SubtleDivider`, `Foldout`, `TwoColumn`, `SearchField`, `TabBar`, `ProgressBar`, `ObjectFieldRow`, `DangerButtonInline`, `SecondaryButtonInline`, `StatusBanner`, `Checker`, `RectBorder`, `TitleBar`) and four new `GUIStyle`s (`Caption`, `Code`, `TitleBarStyle`, `RowAlt`); a broadened theme palette (`DividerSubtle`, `BackgroundEmphasis`, `ButtonHover`) and a `NoticeKind.Danger` value; and theme-routed `EditorElementWalker` chrome that reads from `WkStyles.Current` instead of baking palette literals. The local `Editor/Common/BlendShapeUtility.cs` is now duplicated by the bundled copy at `Editor/Internal/Utilities/BlendShapeUtility.cs` -- callers still reference the local copy; a follow-up will drop the local and redirect imports. No user-visible behaviour change in this version.
@@ -23,10 +27,10 @@ _No notable changes since the last release._
 
 ---
 
-## [v1.1.1](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/tag/v1.1.1) -- 2026-05-25
+## [v1.1.1](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.1.1) -- 2026-05-25
 
 ### Added
-- **logging:** Every diagnostic line in this package now routes through `AvatarQolLogger.Instance` (the package's registered `WkLogger`). Sessions are written to `%LocalAppData%/WhyKnot/Logs/dev.whyknot.avatar-qol/session-<timestamp>.log`, capped at 3 retained sessions per package. Each line carries a level tag, source file:line, calling method, and message. Info, Warning, and Error mirror to the Unity Console as before; Debug stays file-only. The session file is project-independent so a bug report can point at the same path regardless of which Unity project surfaced it. Multi-line StringBuilder dumps from `WeightSanityCheckWindow` (Inspect Vertex, Weight Dump, verbose scan log) and `PhysBoneClippingRiskWindow` (verbose scan log) now go through the logger too.
+- **logging:** Every diagnostic line in this package now routes through `AvatarQolLogger.Instance` (the package's registered `WkLogger`). Sessions are written to `%LocalAppData%/WhyKnot/Logs/dev.whyknot.wk-vrc-qol/session-<timestamp>.log`, capped at 3 retained sessions per package. Each line carries a level tag, source file:line, calling method, and message. Info, Warning, and Error mirror to the Unity Console as before; Debug stays file-only. The session file is project-independent so a bug report can point at the same path regardless of which Unity project surfaced it. Multi-line StringBuilder dumps from `WeightSanityCheckWindow` (Inspect Vertex, Weight Dump, verbose scan log) and `PhysBoneClippingRiskWindow` (verbose scan log) now go through the logger too.
 - **theming:** Tool window OnGUI / OnInspectorGUI bodies open `using (WkStyles.Scope(WkTheme.WhyKnot))` so the IMGUI palette emits the WhyKnot brand colors (black / gray / light blue). Covers Weight Sanity Check, PhysBone Preset, PhysBone Clipping Risks, Bone Merger, Mesh Fix window, and the AutoTightenToBody / MeshFixController inspector editors.
 - Loom M1, intent-component split, Mask Painter (1.1.0-beta.5) (556c170)
 - **loom+ci:** Defer Loom, autoload logger version (1.1.0-beta.6) (97903d2)
@@ -34,13 +38,13 @@ _No notable changes since the last release._
 
 ### Changed
 - **deps:** Bumped `dev.whyknot.core` dependency to `>=1.1.0` so the new theming system and `WkLogger` are guaranteed available.
-- **deps:** Add `dev.whyknot.core` (>=1.0.0) as a hard `vpmDependency`. VCC auto-installs the shared utility package alongside vrc-avatar-qol. Internal-only refactor that moves `AvatarQolStyles` (palette + lazy GUIStyles + IMGUI primitives) -> `WkStyles`, `HumanoidSideMap` + `BoneSide` -> `WhyKnot.Core.Utilities`, `GetGameObjectPath` -> `WhyKnot.Core.Utilities.PathUtility`, and the FBX-clone helper that `WeightFixer` and `BoneMergerWindow` duplicated -> `WhyKnot.Core.Utilities.FbxMeshUtility`. The three domain-specific issue-category colors (humanoid / spatial / center) stay in this package as `AvatarQolCategoryColors`. No user-visible behaviour change beyond Ctrl+Z on `WeightFixer` now also removing the cloned `.mesh` asset from disk (parity with Bone Merger's existing behaviour).
+- **deps:** Add `dev.whyknot.core` (>=1.0.0) as a hard `vpmDependency`. VCC auto-installs the shared utility package alongside wk-vrc-qol. Internal-only refactor that moves `AvatarQolStyles` (palette + lazy GUIStyles + IMGUI primitives) -> `WkStyles`, `HumanoidSideMap` + `BoneSide` -> `WhyKnot.Core.Utilities`, `GetGameObjectPath` -> `WhyKnot.Core.Utilities.PathUtility`, and the FBX-clone helper that `WeightFixer` and `BoneMergerWindow` duplicated -> `WhyKnot.Core.Utilities.FbxMeshUtility`. The three domain-specific issue-category colors (humanoid / spatial / center) stay in this package as `AvatarQolCategoryColors`. No user-visible behaviour change beyond Ctrl+Z on `WeightFixer` now also removing the cloned `.mesh` asset from disk (parity with Bone Merger's existing behaviour).
 - **deps:** Bump actions/checkout from 4 to 6 (#1) (0d8ab2b)
 - Mesh Fix pipeline: fix native-array leak, missing using, idempotent delayCall, preview leak; only clone write-target meshes (31d1746)
 - Editor asmdef: gate WHYKNOT_NDMF on nadena.dev.ndmf >=1.0.0; qualify Object disambiguation (5785f9d)
 - Surrounding tools: WeightFixer handshake; Clipping Keep/Merge/Overwrite (3221b6d)
 - Mesh Fix pipeline: redesign Auto Mesh Fixes around plan/apply with shape registry (e3b5885)
-- Add Auto Mesh Fixes, PhysBone Clipping Risks, Bone Merger; namespace tools under WhyKnot/vrc-avatar-qol (1471d75)
+- Add Auto Mesh Fixes, PhysBone Clipping Risks, Bone Merger; namespace tools under WhyKnot/wk-vrc-qol (1471d75)
 - Editor asmdef: drop the speculative WHYKNOT_NDMF versionDefine (5a7f5e1)
 
 ### Fixed
@@ -49,7 +53,7 @@ _No notable changes since the last release._
 
 ---
 
-## [1.0.1](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/tag/v1.0.1) -- 2026-05-07
+## [1.0.1](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.0.1) -- 2026-05-07
 
 ### Changed
 - License: switched from MIT to GPL-3.0-or-later. Same set of users can use, modify, and redistribute; downstream forks now propagate the GPL terms instead of MIT's permissive ones.
@@ -57,16 +61,16 @@ _No notable changes since the last release._
 
 ---
 
-## [1.0.0](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/tag/v1.0.0) -- 2026-05-03
+## [1.0.0](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.0.0) -- 2026-05-03
 
 First release as a VRChat Package Manager (VPM) package, installable via the Creator Companion at `https://vpm.whyknot.dev/index.json`.
 
 ### Added
-- VPM package metadata (`package.json`) declaring `dev.whyknot.avatar-qol` with a hard `vpmDependencies` on `com.vrchat.avatars` (>= 3.5.0).
-- Editor assembly definition (`Editor/dev.whyknot.avatar-qol.Editor.asmdef`) scoping the tools to the Editor platform and gating the SDK-conditional code via `versionDefines` for `VRC_SDK_VRCSDK3`.
+- VPM package metadata (`package.json`) declaring `dev.whyknot.wk-vrc-qol` with a hard `vpmDependencies` on `com.vrchat.avatars` (>= 3.5.0).
+- Editor assembly definition (`Editor/dev.whyknot.wk-vrc-qol.Editor.asmdef`) scoping the tools to the Editor platform and gating the SDK-conditional code via `versionDefines` for `VRC_SDK_VRCSDK3`.
 
 ### Changed
-- **Breaking for loose-script users.** Prior to 1.0.0 the recommended install was to drop the `Editor/` folder anywhere under your `Assets/` tree; Unity compiled the scripts into the project's default editor assembly. With the new asmdef, code now compiles into a dedicated `dev.whyknot.avatar-qol.Editor` assembly. If you were previously importing as loose scripts and you upgrade by adding the asmdef in place, *internal* type references inside this package keep working, but any **external** code in your project that referenced these tools' types (e.g. `WhyKnot.AvatarQol.AvatarQol` from your own scripts) will need its asmdef to add `dev.whyknot.avatar-qol.Editor` to its `references`.
+- **Breaking for loose-script users.** Prior to 1.0.0 the recommended install was to drop the `Editor/` folder anywhere under your `Assets/` tree; Unity compiled the scripts into the project's default editor assembly. With the new asmdef, code now compiles into a dedicated `dev.whyknot.wk-vrc-qol.Editor` assembly. If you were previously importing as loose scripts and you upgrade by adding the asmdef in place, *internal* type references inside this package keep working, but any **external** code in your project that referenced these tools' types (e.g. `WhyKnot.AvatarQol.AvatarQol` from your own scripts) will need its asmdef to add `dev.whyknot.wk-vrc-qol.Editor` to its `references`.
 - Recommended migration: remove the old loose-script copy from `Assets/` and reinstall via VCC. Unity asset GUIDs are regenerated on import; nothing inside this package references its own files by GUID, so no project-side cleanup is required beyond removing the duplicate.
 
 ### Notes

@@ -44,7 +44,7 @@ namespace WhyKnot.AvatarQol.Tests {
             while (dir != null && !File.Exists(Path.Combine(dir.FullName, "package.json"))) {
                 dir = dir.Parent;
             }
-            Assert.IsNotNull(dir, "Could not locate the avatar-qol package root (no package.json found walking up).");
+            Assert.IsNotNull(dir, "Could not locate the wk-vrc-qol package root (no package.json found walking up).");
             return dir.FullName;
         }
 

@@ -1,9 +1,9 @@
 {
-    "name": "dev.whyknot.avatar-qol.Tests.Editor",
+    "name": "dev.whyknot.wk-vrc-qol.Tests.Editor",
     "rootNamespace": "WhyKnot.AvatarQol.Tests",
     "references": [
-        "dev.whyknot.avatar-qol.Editor",
-        "dev.whyknot.avatar-qol.Runtime",
+        "dev.whyknot.wk-vrc-qol.Editor",
+        "dev.whyknot.wk-vrc-qol.Runtime",
         "VRC.SDK3A",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
