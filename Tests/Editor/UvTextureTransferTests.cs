@@ -1,0 +1,480 @@
+// UvTextureTransferTests.cs
+//
+// Pure-math coverage for UvTextureTransferCore. The end-to-end Transfer
+// test wires a tiny quad-to-itself round-trip to confirm the rasterizer,
+// the spatial grid, the closest-point query, and the texture sample all
+// agree on the same identity. UI, FBX import, and PNG persistence live
+// in sibling files and are exercised manually.
+
+using System.Collections.Generic;
+using NUnit.Framework;
+using UnityEngine;
+using WhyKnot.AvatarQol.Tools;
+
+namespace WhyKnot.AvatarQol.Tests {
+
+    public sealed class UvTextureTransferTests {
+
+        // ----------------------------------------------------------------
+        // ClosestPointOnTriangle
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void ClosestPoint_InteriorProjection_LandsOnTrianglePlane() {
+            var a = new Vector3(0, 0, 0);
+            var b = new Vector3(1, 0, 0);
+            var c = new Vector3(0, 1, 0);
+            var p = new Vector3(0.25f, 0.25f, 5f);
+            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            Assert.AreEqual(0.25f, cp.x, 1e-5f);
+            Assert.AreEqual(0.25f, cp.y, 1e-5f);
+            Assert.AreEqual(0f,    cp.z, 1e-5f);
+            Assert.AreEqual(1f, wa + wb + wc, 1e-5f, "Barycentric weights must sum to 1.");
+            Assert.AreEqual(0.5f,  wa, 1e-5f);
+            Assert.AreEqual(0.25f, wb, 1e-5f);
+            Assert.AreEqual(0.25f, wc, 1e-5f);
+        }
+
+        [Test]
+        public void ClosestPoint_VertexRegion_ProjectsToVertex() {
+            var a = new Vector3(0, 0, 0);
+            var b = new Vector3(1, 0, 0);
+            var c = new Vector3(0, 1, 0);
+            // Far outside the triangle in vertex A's region (-x, -y).
+            var p = new Vector3(-2f, -3f, 1f);
+            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            Assert.AreEqual(a, cp);
+            Assert.AreEqual(1f, wa, 1e-5f);
+            Assert.AreEqual(0f, wb, 1e-5f);
+            Assert.AreEqual(0f, wc, 1e-5f);
+        }
+
+        [Test]
+        public void ClosestPoint_EdgeRegion_ProjectsToEdgeMidpoint() {
+            var a = new Vector3(0, 0, 0);
+            var b = new Vector3(1, 0, 0);
+            var c = new Vector3(0, 1, 0);
+            // Below the AB edge, halfway across. The closest point on
+            // the triangle is the midpoint of AB.
+            var p = new Vector3(0.5f, -1f, 0f);
+            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            Assert.AreEqual(0.5f, cp.x, 1e-5f);
+            Assert.AreEqual(0f,   cp.y, 1e-5f);
+            Assert.AreEqual(0f,   cp.z, 1e-5f);
+            Assert.AreEqual(0.5f, wa, 1e-5f);
+            Assert.AreEqual(0.5f, wb, 1e-5f);
+            Assert.AreEqual(0f,   wc, 1e-5f);
+        }
+
+        [Test]
+        public void ClosestPoint_PointInsideTriangle_ReturnsItself() {
+            var a = new Vector3(0, 0, 0);
+            var b = new Vector3(1, 0, 0);
+            var c = new Vector3(0, 1, 0);
+            var p = new Vector3(0.2f, 0.2f, 0f);
+            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            Assert.AreEqual(p, cp);
+            Assert.AreEqual(1f, wa + wb + wc, 1e-5f);
+        }
+
+        // ----------------------------------------------------------------
+        // SpatialGrid + QueryClosest
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void SpatialGrid_QueryAtVertex_ReturnsContainingTriangle() {
+            // Two-triangle quad in XY plane.
+            var verts = new[] {
+                new Vector3(0, 0, 0), new Vector3(1, 0, 0),
+                new Vector3(1, 1, 0), new Vector3(0, 1, 0),
+            };
+            var triangles = new[] { 0, 1, 2, 0, 2, 3 };
+            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 4);
+            // Query a point inside the first triangle (0,1,2).
+            var hit = UvTextureTransferCore.QueryClosest(grid, verts, triangles, new Vector3(0.6f, 0.3f, 0f));
+            Assert.GreaterOrEqual(hit.triangleIndex, 0, "Query must find a triangle.");
+            Assert.Less(hit.distance, 1e-4f, "Point is already on the surface; distance should be ~0.");
+        }
+
+        [Test]
+        public void SpatialGrid_QueryAbovePlane_ProjectsDownToNearestTriangle() {
+            var verts = new[] {
+                new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0),
+            };
+            var triangles = new[] { 0, 1, 2 };
+            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 2);
+            var hit = UvTextureTransferCore.QueryClosest(grid, verts, triangles, new Vector3(0.25f, 0.25f, 3f));
+            Assert.AreEqual(0, hit.triangleIndex);
+            Assert.AreEqual(3f, hit.distance, 1e-4f);
+            Assert.AreEqual(0.25f, hit.point.x, 1e-5f);
+            Assert.AreEqual(0.25f, hit.point.y, 1e-5f);
+            Assert.AreEqual(0f,    hit.point.z, 1e-5f);
+        }
+
+        [Test]
+        public void SpatialGrid_EmptyMesh_QueryReturnsNoHit() {
+            var grid = UvTextureTransferCore.BuildSpatialGrid(new Vector3[0], new int[0], dim: 4);
+            var hit = UvTextureTransferCore.QueryClosest(grid, new Vector3[0], new int[0], Vector3.zero);
+            Assert.AreEqual(-1, hit.triangleIndex);
+            Assert.IsTrue(float.IsPositiveInfinity(hit.distance));
+        }
+
+        [Test]
+        public void SpatialGrid_TriangleInsertedInEveryOverlappingCell() {
+            // A single triangle whose AABB spans the full mesh bbox.
+            // Every cell that the AABB overlaps must hold the triangle.
+            var verts = new[] {
+                new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0.5f, 1, 0),
+            };
+            var triangles = new[] { 0, 1, 2 };
+            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 4);
+            int nonEmpty = 0;
+            for (int i = 0; i < grid.cells.Length; i++) if (grid.cells[i] != null) nonEmpty++;
+            Assert.Greater(nonEmpty, 0, "The triangle must populate at least one cell.");
+        }
+
+        [Test]
+        public void PickGridDim_ScalesWithTriangleCount() {
+            Assert.AreEqual(4, UvTextureTransferCore.PickGridDim(0));
+            Assert.AreEqual(4, UvTextureTransferCore.PickGridDim(10));
+            int big = UvTextureTransferCore.PickGridDim(100_000);
+            Assert.GreaterOrEqual(big, 16);
+            Assert.LessOrEqual(big, 64);
+        }
+
+        // ----------------------------------------------------------------
+        // RasterizeTargetUv
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void Rasterize_QuadCoversAllTexels() {
+            var uvs = new[] {
+                new Vector2(0, 0), new Vector2(1, 0),
+                new Vector2(1, 1), new Vector2(0, 1),
+            };
+            var tris = new[] { 0, 1, 2, 0, 2, 3 };
+            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 16);
+            int covered = 0;
+            for (int i = 0; i < samples.Length; i++) if (samples[i].triangleIndex >= 0) covered++;
+            Assert.AreEqual(16 * 16, covered, "A unit-quad UV layout must cover every output texel.");
+        }
+
+        [Test]
+        public void Rasterize_TriangleEntirelyOutsideUnitSquare_IsDropped() {
+            var uvs = new[] {
+                new Vector2(2, 2), new Vector2(3, 2), new Vector2(2, 3),
+            };
+            var tris = new[] { 0, 1, 2 };
+            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 8);
+            for (int i = 0; i < samples.Length; i++) {
+                Assert.AreEqual(-1, samples[i].triangleIndex);
+            }
+        }
+
+        [Test]
+        public void Rasterize_FirstWriteWins_OnOverlappingTriangles() {
+            // Two triangles whose UVs overlap entirely. First-write-wins
+            // means every covered texel reports triangle 0, not 1.
+            var uvs = new[] {
+                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1),
+                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1),
+            };
+            var tris = new[] { 0, 1, 2, 3, 4, 5 };
+            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 8);
+            for (int i = 0; i < samples.Length; i++) {
+                if (samples[i].triangleIndex >= 0) {
+                    Assert.AreEqual(0, samples[i].triangleIndex,
+                        "Overlapping target UVs must resolve to the first-touching triangle.");
+                }
+            }
+        }
+
+        [Test]
+        public void Rasterize_DegenerateUvTriangle_ProducesNoCoverage() {
+            // All three UVs at the same point -> zero-area triangle.
+            var uvs = new[] {
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+            };
+            var tris = new[] { 0, 1, 2 };
+            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 4);
+            for (int i = 0; i < samples.Length; i++) {
+                Assert.AreEqual(-1, samples[i].triangleIndex,
+                    "Degenerate (zero-area) UV triangle must not write any texel.");
+            }
+        }
+
+        [Test]
+        public void Rasterize_BarycentricWeightsSumToOne() {
+            var uvs = new[] {
+                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1),
+            };
+            var tris = new[] { 0, 1, 2 };
+            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 16);
+            for (int i = 0; i < samples.Length; i++) {
+                if (samples[i].triangleIndex < 0) continue;
+                float sum = samples[i].wa + samples[i].wb + samples[i].wc;
+                Assert.AreEqual(1f, sum, 1e-3f, "Barycentric weights stored in a sample must sum to 1.");
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // ComputeAlignment
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void ComputeAlignment_Identity_PassesThroughInputMatrices() {
+            var s = Matrix4x4.Translate(new Vector3(1, 2, 3));
+            var t = Matrix4x4.Translate(new Vector3(4, 5, 6));
+            var aligned = UvTextureTransferCore.ComputeAlignment(
+                UvTextureTransferCore.AlignmentMode.Identity, null, null, s, t);
+            Assert.AreEqual(s, aligned.source);
+            Assert.AreEqual(t, aligned.target);
+        }
+
+        [Test]
+        public void ComputeAlignment_BBox_MapsSourceCenterToTargetCenter() {
+            // Source mesh: cube at origin sized 1m. Target mesh: cube at
+            // (10, 0, 0) sized 2m. BoundingBox alignment should produce a
+            // source matrix that scales by 2 and translates to (10, 0, 0).
+            var source = BuildAxisAlignedCubeMesh(center: Vector3.zero, size: 1f);
+            var target = BuildAxisAlignedCubeMesh(center: new Vector3(10, 0, 0), size: 2f);
+            try {
+                var aligned = UvTextureTransferCore.ComputeAlignment(
+                    UvTextureTransferCore.AlignmentMode.BoundingBox,
+                    source, target, Matrix4x4.identity, Matrix4x4.identity);
+                // Source's (0,0,0) should map to target's (10, 0, 0).
+                var origin = aligned.source.MultiplyPoint3x4(Vector3.zero);
+                Assert.AreEqual(10f, origin.x, 1e-3f);
+                Assert.AreEqual(0f,  origin.y, 1e-3f);
+                Assert.AreEqual(0f,  origin.z, 1e-3f);
+                // Source's (0.5, 0, 0) should map to target's (10 + 1, 0, 0).
+                var px = aligned.source.MultiplyPoint3x4(new Vector3(0.5f, 0, 0));
+                Assert.AreEqual(11f, px.x, 1e-3f);
+                Assert.AreEqual(Matrix4x4.identity, aligned.target);
+            } finally {
+                Object.DestroyImmediate(source);
+                Object.DestroyImmediate(target);
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Transfer end-to-end
+        //
+        // Identity round-trip: source mesh = target mesh = unit quad, the
+        // source texture is a 4x4 checkerboard. Every target texel that
+        // gets covered should sample the same checkerboard pattern in
+        // the same position because closest-point on the same mesh is
+        // the point itself. Subject to small floating-point bilinear
+        // interpolation drift along texel boundaries.
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void Transfer_QuadToItself_OutputPixelMatchesSourceAtThatUv() {
+            // Identity quad-to-itself: each output texel at center UV
+            // (u, v) must sample the source texture at the SAME (u, v).
+            // We compare against the source's bilinear value at the
+            // texel center, NOT the output's bilinear, because the
+            // output is a discrete grid -- bilinear over the output
+            // averages neighbouring texels and would not match the
+            // continuous source bilinear at the same UV.
+            var quad = BuildUnitQuadMesh();
+            var src = BuildTwoByTwoTexture();
+            try {
+                int res = 8;
+                var opt = new UvTextureTransferCore.TransferOptions {
+                    sourceMesh        = quad,
+                    sourceSubmesh     = -1,
+                    sourceTexture     = src,
+                    targetMesh        = quad,
+                    targetSubmesh     = -1,
+                    outputResolution  = res,
+                    alignment         = UvTextureTransferCore.AlignmentMode.Identity,
+                    sourceWorldMatrix = Matrix4x4.identity,
+                    targetWorldMatrix = Matrix4x4.identity,
+                    maxDistance       = 0f,
+                    gridDim           = 4,
+                    fallbackColor     = new Color(0, 0, 0, 0),
+                };
+                var result = UvTextureTransferCore.Transfer(opt);
+                Assert.IsNotNull(result.output);
+                Assert.AreEqual(res, result.output.width);
+                Assert.AreEqual(res, result.output.height);
+                Assert.Greater(result.coveredTexels, res * res * 3 / 4,
+                    "Quad-to-itself must cover the vast majority of output texels.");
+                // Spot-check several texels across the output. For each,
+                // the value must equal the source bilinear at that
+                // texel's UV center, within a small tolerance.
+                int[] xs = { 1, 3, res - 2 };
+                int[] ys = { 1, 4, res - 2 };
+                // Tolerance accounts for RGBA32 8-bit quantization
+                // (~1/255 = 0.004 per channel) plus the rasterizer's
+                // half-texel sampling offset relative to the edge of the
+                // triangle's UV bounding box.
+                const float tol = 0.01f;
+                foreach (int y in ys) foreach (int x in xs) {
+                    float u = (x + 0.5f) / res;
+                    float v = (y + 0.5f) / res;
+                    var expected = src.GetPixelBilinear(u, v);
+                    var actual = result.output.GetPixel(x, y);
+                    Assert.AreEqual(expected.r, actual.r, tol, $"R at ({x},{y})");
+                    Assert.AreEqual(expected.g, actual.g, tol, $"G at ({x},{y})");
+                    Assert.AreEqual(expected.b, actual.b, tol, $"B at ({x},{y})");
+                }
+                Object.DestroyImmediate(result.output);
+            } finally {
+                Object.DestroyImmediate(quad);
+                Object.DestroyImmediate(src);
+            }
+        }
+
+        [Test]
+        public void Transfer_QuadToItself_FlatSourceProducesFlatOutput() {
+            // The cleanest invariant: a single-color source yields a
+            // single-color output at every covered texel. Tests the
+            // rasterizer + closest-point + sample chain without the
+            // bilinear-edge gotchas of a graded source.
+            var quad = BuildUnitQuadMesh();
+            var src = BuildFlatColorTexture(new Color(0.7f, 0.3f, 0.2f, 1f));
+            try {
+                var opt = new UvTextureTransferCore.TransferOptions {
+                    sourceMesh        = quad,
+                    sourceSubmesh     = -1,
+                    sourceTexture     = src,
+                    targetMesh        = quad,
+                    targetSubmesh     = -1,
+                    outputResolution  = 16,
+                    alignment         = UvTextureTransferCore.AlignmentMode.Identity,
+                    sourceWorldMatrix = Matrix4x4.identity,
+                    targetWorldMatrix = Matrix4x4.identity,
+                    maxDistance       = 0f,
+                    gridDim           = 4,
+                    fallbackColor     = new Color(0, 0, 0, 0),
+                };
+                var result = UvTextureTransferCore.Transfer(opt);
+                // Sample every interior texel; expect the source color.
+                // Tolerance: 1/255 ~= 0.004 for 8-bit channel storage.
+                const float tol = 0.01f;
+                for (int y = 1; y < result.output.height - 1; y++) {
+                    for (int x = 1; x < result.output.width - 1; x++) {
+                        var c = result.output.GetPixel(x, y);
+                        Assert.AreEqual(0.7f, c.r, tol, $"R at ({x},{y})");
+                        Assert.AreEqual(0.3f, c.g, tol, $"G at ({x},{y})");
+                        Assert.AreEqual(0.2f, c.b, tol, $"B at ({x},{y})");
+                    }
+                }
+                Object.DestroyImmediate(result.output);
+            } finally {
+                Object.DestroyImmediate(quad);
+                Object.DestroyImmediate(src);
+            }
+        }
+
+        [Test]
+        public void Transfer_RejectsTexelsBeyondMaxDistance() {
+            // Source is a quad at the origin; target is the same quad
+            // translated 1 m away (Identity alignment so the translation
+            // sticks). Max distance 0.1 m means every target texel is
+            // beyond the cap and gets the fallback color.
+            var source = BuildUnitQuadMesh();
+            var target = BuildUnitQuadMesh();
+            var src = BuildTwoByTwoTexture();
+            try {
+                var opt = new UvTextureTransferCore.TransferOptions {
+                    sourceMesh        = source,
+                    sourceSubmesh     = -1,
+                    sourceTexture     = src,
+                    targetMesh        = target,
+                    targetSubmesh     = -1,
+                    outputResolution  = 4,
+                    alignment         = UvTextureTransferCore.AlignmentMode.Identity,
+                    sourceWorldMatrix = Matrix4x4.identity,
+                    targetWorldMatrix = Matrix4x4.Translate(new Vector3(1, 0, 0)),
+                    maxDistance       = 0.1f,
+                    gridDim           = 4,
+                    fallbackColor     = new Color(0.9f, 0.1f, 0.1f, 1f),
+                };
+                var result = UvTextureTransferCore.Transfer(opt);
+                Assert.AreEqual(0, result.coveredTexels,
+                    "Max-distance cap should reject every texel when the meshes are 1 m apart and the cap is 10 cm.");
+                Assert.Greater(result.rejectedByDistance, 0);
+                var c = result.output.GetPixel(2, 2);
+                Assert.AreEqual(0.9f, c.r, 1e-2f);
+                Assert.AreEqual(0.1f, c.g, 1e-2f);
+                Object.DestroyImmediate(result.output);
+            } finally {
+                Object.DestroyImmediate(source);
+                Object.DestroyImmediate(target);
+                Object.DestroyImmediate(src);
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Helpers
+        // ----------------------------------------------------------------
+
+        private static Mesh BuildUnitQuadMesh() {
+            var mesh = new Mesh { name = "TestQuad" };
+            mesh.vertices = new[] {
+                new Vector3(0, 0, 0), new Vector3(1, 0, 0),
+                new Vector3(1, 1, 0), new Vector3(0, 1, 0),
+            };
+            mesh.uv = new[] {
+                new Vector2(0, 0), new Vector2(1, 0),
+                new Vector2(1, 1), new Vector2(0, 1),
+            };
+            mesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static Mesh BuildAxisAlignedCubeMesh(Vector3 center, float size) {
+            // 8 verts, 12 triangles; UVs not needed for bbox alignment test.
+            float h = size * 0.5f;
+            var verts = new Vector3[8];
+            int i = 0;
+            for (int z = -1; z <= 1; z += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int x = -1; x <= 1; x += 2)
+                verts[i++] = center + new Vector3(x * h, y * h, z * h);
+            var mesh = new Mesh { name = "TestCube" };
+            mesh.vertices = verts;
+            mesh.triangles = new[] {
+                0, 1, 2, 1, 3, 2,   4, 6, 5, 5, 6, 7,
+                0, 2, 4, 2, 6, 4,   1, 5, 3, 3, 5, 7,
+                0, 4, 1, 1, 4, 5,   2, 3, 6, 3, 7, 6,
+            };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static Texture2D BuildFlatColorTexture(Color color) {
+            var t = new Texture2D(4, 4, TextureFormat.RGBA32, mipChain: false, linear: true) {
+                filterMode = FilterMode.Bilinear,
+                wrapMode   = TextureWrapMode.Clamp,
+            };
+            var px = new Color[16];
+            for (int i = 0; i < px.Length; i++) px[i] = color;
+            t.SetPixels(px);
+            t.Apply();
+            return t;
+        }
+
+        private static Texture2D BuildTwoByTwoTexture() {
+            // 2x2 checkerboard: (0,0)=red, (1,0)=green, (0,1)=blue, (1,1)=yellow.
+            // Linear color space; the Transfer pipeline treats textures as
+            // data, not gamma-encoded.
+            var t = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: true) {
+                filterMode = FilterMode.Bilinear,
+                wrapMode   = TextureWrapMode.Clamp,
+            };
+            t.SetPixel(0, 0, Color.red);
+            t.SetPixel(1, 0, Color.green);
+            t.SetPixel(0, 1, Color.blue);
+            t.SetPixel(1, 1, Color.yellow);
+            t.Apply();
+            return t;
+        }
+    }
+}
