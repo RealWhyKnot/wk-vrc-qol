@@ -16,7 +16,7 @@
 // bump on release. CI also enforces this via .github/workflows/version-guard.yml.
 
 using UnityEditor;
-using WhyKnot.Core.Logging;
+using WhyKnot.AvatarQol.Internal.Logging;
 
 namespace WhyKnot.AvatarQol {
 

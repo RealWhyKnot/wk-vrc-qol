@@ -34,7 +34,7 @@ using UnityEngine;
 using VRC.SDKBase.Editor.BuildPipeline;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.Tools;
-using WhyKnot.Core.Utilities;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.WeightFixes {
 

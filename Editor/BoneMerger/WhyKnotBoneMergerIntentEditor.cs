@@ -12,7 +12,7 @@ using WhyKnot.AvatarQol.BoneMerger;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.Intent;
 using WhyKnot.AvatarQol.Tools;
-using WhyKnot.Core.Styling;
+using WhyKnot.AvatarQol.Internal.Styling;
 
 namespace WhyKnot.AvatarQol.BoneMerger.UI {
 

@@ -31,7 +31,7 @@ using UnityEditor;
 using UnityEngine;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.Intent;
-using WhyKnot.Core.Utilities;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.BoneMerger {
 

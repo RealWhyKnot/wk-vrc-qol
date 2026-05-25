@@ -60,8 +60,8 @@ using UnityEngine;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.Intent;
 using WhyKnot.AvatarQol.WeightFixes;
-using WhyKnot.Core.Styling;
-using WhyKnot.Core.Utilities;
+using WhyKnot.AvatarQol.Internal.Styling;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 

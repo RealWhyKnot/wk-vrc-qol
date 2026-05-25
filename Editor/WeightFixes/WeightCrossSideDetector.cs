@@ -26,7 +26,7 @@
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
-using WhyKnot.Core.Utilities;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.WeightFixes {
 

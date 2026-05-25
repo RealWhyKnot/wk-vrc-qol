@@ -4,7 +4,6 @@
     "references": [
         "dev.whyknot.avatar-qol.Editor",
         "dev.whyknot.avatar-qol.Runtime",
-        "dev.whyknot.core.Editor",
         "VRC.SDK3A",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"

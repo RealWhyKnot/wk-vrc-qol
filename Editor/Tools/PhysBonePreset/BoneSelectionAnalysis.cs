@@ -33,8 +33,8 @@
 
 using System.Collections.Generic;
 using UnityEngine;
-using WhyKnot.Core.Styling;
-using WhyKnot.Core.Utilities;
+using WhyKnot.AvatarQol.Internal.Styling;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 

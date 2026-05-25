@@ -4,12 +4,12 @@
 // matches the fixer's IssueRef (Renderer + VertexIndex + OffendingBone +
 // Weight) plus side/category context the UI uses for rendering.
 //
-// Side classification fields are kept in WhyKnot.Core.Utilities.BoneSide
+// Side classification fields are kept in WhyKnot.AvatarQol.Internal.Utilities.BoneSide
 // so the runtime apply hook and the UI agree on enum values without a
 // separate vendor enum.
 
 using UnityEngine;
-using WhyKnot.Core.Utilities;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.WeightFixes {
 

@@ -9,8 +9,8 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
-using WhyKnot.Core.Styling;
-using WhyKnot.Core.Utilities;
+using WhyKnot.AvatarQol.Internal.Styling;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 
