@@ -15,6 +15,7 @@ The most recent release is at the top.
 - **logging:** Every diagnostic line in this package now routes through `AvatarQolLogger.Instance` (the package's registered `WkLogger`). Sessions are written to `%LocalAppData%/WhyKnot/Logs/dev.whyknot.avatar-qol/session-<timestamp>.log`, capped at 3 retained sessions per package. Each line carries a level tag, source file:line, calling method, and message. Info, Warning, and Error mirror to the Unity Console as before; Debug stays file-only. The session file is project-independent so a bug report can point at the same path regardless of which Unity project surfaced it. Multi-line StringBuilder dumps from `WeightSanityCheckWindow` (Inspect Vertex, Weight Dump, verbose scan log) and `PhysBoneClippingRiskWindow` (verbose scan log) now go through the logger too.
 - **theming:** Tool window OnGUI / OnInspectorGUI bodies open `using (WkStyles.Scope(WkTheme.WhyKnot))` so the IMGUI palette emits the WhyKnot brand colors (black / gray / light blue). Covers Weight Sanity Check, PhysBone Preset, PhysBone Clipping Risks, Bone Merger, Mesh Fix window, and the AutoTightenToBody / MeshFixController inspector editors.
 - Loom M1, intent-component split, Mask Painter (1.1.0-beta.5) (556c170)
+- **loom+ci:** Defer Loom, autoload logger version (1.1.0-beta.6) (97903d2)
 
 ### Changed
 - **deps:** Bumped `dev.whyknot.core` dependency to `>=1.1.0` so the new theming system and `WkLogger` are guaranteed available.
