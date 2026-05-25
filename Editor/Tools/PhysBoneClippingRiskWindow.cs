@@ -11,8 +11,6 @@ using UnityEditor;
 using UnityEngine;
 using WhyKnot.Core.Styling;
 using WhyKnot.Core.Utilities;
-using WhyKnot.AvatarQol.Components;
-using WhyKnot.AvatarQol.MeshFixes.UI;
 
 namespace WhyKnot.AvatarQol.Tools {
 
@@ -173,6 +171,9 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawScanBar() {
+            WkStyles.Notice(NoticeKind.Info,
+                "Auto Mesh Fixes was removed in this release. The analyzer still finds clipping risks and can still reduce PhysBone motion; the mesh-fix workflow is no longer offered.");
+
             using (new EditorGUILayout.HorizontalScope()) {
                 using (new EditorGUI.DisabledScope(!CanScan())) {
                     if (WkStyles.PrimaryButtonInline(
@@ -182,21 +183,19 @@ namespace WhyKnot.AvatarQol.Tools {
                         Scan();
                     }
                 }
-                using (new EditorGUI.DisabledScope(!CanCreateMeshFixAny())) {
-                    if (GUILayout.Button(
-                            new GUIContent("Create mesh fixes",
-                                "Create or update stored Auto Mesh Fix components on the affected moving mesh objects, then open Auto Mesh Fixes so you can review them."),
-                            GUILayout.Height(28), GUILayout.Width(132))) {
-                        CreateMeshFixSetups(_issues);
-                    }
-                }
                 using (new EditorGUI.DisabledScope(!CanReduceMotionAny())) {
                     if (GUILayout.Button(
                             new GUIContent("Reduce motion",
-                                "Immediate fallback: tighten the PhysBone or supported authoring component settings. This is not the component-backed mesh fix."),
-                            GUILayout.Height(28), GUILayout.Width(108))) {
+                                "Immediate fallback: tighten the PhysBone or supported authoring component settings on every supported risk row."),
+                            GUILayout.Height(28), GUILayout.Width(120))) {
                         ReduceMotion(_issues);
                     }
+                }
+                using (new EditorGUI.DisabledGroupScope(true)) {
+                    GUILayout.Button(
+                        new GUIContent("Auto Mesh Fixes (removed)",
+                            "Tombstone: the Auto Mesh Fixes mesh-fix workflow was removed in this release because the garment-tighten pipeline never produced a usable result. The button is left here disabled so the workflow is not silently re-added."),
+                        GUILayout.Height(28), GUILayout.Width(196));
                 }
                 using (new EditorGUI.DisabledScope(_previewBone == null)) {
                     if (GUILayout.Button(
@@ -266,22 +265,6 @@ namespace WhyKnot.AvatarQol.Tools {
                         issue.Reason),
                     WkStyles.Mono);
                 GUILayout.FlexibleSpace();
-                using (new EditorGUI.DisabledScope(!CanCreateMeshFix(issue))) {
-                    if (GUILayout.Button(
-                            new GUIContent("Mesh fix",
-                                "Create or update a stored Auto Mesh Fix component on the moving mesh object for this risk."),
-                            WkStyles.MiniRowButton, GUILayout.Width(66))) {
-                        CreateMeshFixSetups(new[] { issue });
-                    }
-                }
-                using (new EditorGUI.DisabledScope(!PhysBoneClippingAnalyzer.CanReduceMotion(issue))) {
-                    if (GUILayout.Button(
-                            new GUIContent("Motion",
-                                "Immediate fallback: tighten this PhysBone source's motion settings. This does not create the stored mesh-fix component."),
-                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
-                        ReduceMotion(new[] { issue });
-                    }
-                }
                 using (new EditorGUI.DisabledScope(issue.Renderer == null)) {
                     if (GUILayout.Button(new GUIContent("Ping", "Ping the target renderer in the hierarchy."),
                             WkStyles.MiniRowButton, GUILayout.Width(42))) {
@@ -292,6 +275,14 @@ namespace WhyKnot.AvatarQol.Tools {
                 if (GUILayout.Button(new GUIContent("Frame", "Frame the risky vertex in Scene view."),
                         WkStyles.MiniRowButton, GUILayout.Width(48))) {
                     Frame(issue.WorldPosition, 0.18f);
+                }
+                using (new EditorGUI.DisabledScope(!PhysBoneClippingAnalyzer.CanReduceMotion(issue))) {
+                    if (GUILayout.Button(
+                            new GUIContent("Motion",
+                                "Immediate fallback: tighten this PhysBone source's motion settings."),
+                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
+                        ReduceMotion(new[] { issue });
+                    }
                 }
                 using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
                     if (GUILayout.Button(new GUIContent("Reveal", "Select and ping the PhysBone-driven transform."),
@@ -324,17 +315,6 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private bool CanReduceMotionAny() {
             return _issues.Any(PhysBoneClippingAnalyzer.CanReduceMotion);
-        }
-
-        private bool CanCreateMeshFixAny() {
-            return _issues.Any(CanCreateMeshFix);
-        }
-
-        private static bool CanCreateMeshFix(PhysBoneClippingAnalyzer.Issue issue) {
-            return issue != null &&
-                   issue.Renderer != null &&
-                   issue.NearestSurfaceRenderer != null &&
-                   issue.NearestSurfaceRenderer != issue.Renderer;
         }
 
         private void Scan() {
@@ -449,154 +429,6 @@ namespace WhyKnot.AvatarQol.Tools {
                 WkStyles.Notice(NoticeKind.Warning,
                     $"{unreadableCount} comparison mesh(es) are not readable and will be skipped. Enable Read/Write on those model imports to include them.");
             }
-        }
-
-        private void CreateMeshFixSetups(IEnumerable<PhysBoneClippingAnalyzer.Issue> issues) {
-            var list = issues == null ? new List<PhysBoneClippingAnalyzer.Issue>() : issues.Where(i => i != null).ToList();
-            if (list.Count == 0) return;
-
-            var candidates = list.Where(CanCreateMeshFix)
-                .OrderByDescending(i => i.Severity)
-                .ThenByDescending(i => i.Score)
-                .ToList();
-            if (candidates.Count == 0) {
-                EditorUtility.DisplayDialog(
-                    "Create Mesh Fix",
-                    "These risks are self-clipping or do not have a separate comparison mesh target. Add a body/clothing/accessory comparison mesh, scan again, then use Create mesh fixes to create a stored mesh-fix setup.",
-                    "OK");
-                return;
-            }
-
-            // Detect renderers that already have a setup so we can ask the
-            // user once what to do (Keep / Merge / Overwrite) instead of
-            // silently mutating their manually-tuned values.
-            var perRendererBest = new List<PhysBoneClippingAnalyzer.Issue>();
-            foreach (var rendererGroup in candidates.GroupBy(i => i.Renderer)) {
-                var best = rendererGroup
-                    .OrderByDescending(i => i.Severity)
-                    .ThenByDescending(i => i.Score)
-                    .FirstOrDefault();
-                if (best == null || best.Renderer == null || best.NearestSurfaceRenderer == null) continue;
-                perRendererBest.Add(best);
-            }
-
-            int existingCount = perRendererBest.Count(b => b.Renderer.GetComponent<AutoTightenToBody>() != null);
-            ExistingSetupAction existingAction = ExistingSetupAction.Merge;
-            if (existingCount > 0) {
-                int choice = EditorUtility.DisplayDialogComplex(
-                    "Avatar QoL - Existing Auto Mesh Fix",
-                    $"{existingCount} renderer(s) already have an Auto Tighten To Body setup. What should I do for those?\n\n" +
-                    "Merge (recommended): widen each numeric parameter to the larger of (current, suggested). Keeps your manual tuning unless the clipping analysis needs more room.\n\n" +
-                    "Overwrite: replace every numeric parameter with the suggested value. Your manual tuning is lost.\n\n" +
-                    "Keep: leave existing setups untouched; only fresh setups are created where there is none yet.",
-                    "Merge",     // 0
-                    "Keep",      // 1 (cancel)
-                    "Overwrite"  // 2 (alt)
-                );
-                switch (choice) {
-                    case 0: existingAction = ExistingSetupAction.Merge; break;
-                    case 1: existingAction = ExistingSetupAction.Keep; break;
-                    case 2: existingAction = ExistingSetupAction.Overwrite; break;
-                }
-            }
-
-            Undo.SetCurrentGroupName("Avatar QoL: create PhysBone clipping mesh fix");
-            int undoGroup = Undo.GetCurrentGroup();
-
-            int created = 0;
-            int updated = 0;
-            int kept = 0;
-            int skipped = list.Count - candidates.Count;
-            AutoTightenToBody lastSetup = null;
-            foreach (var best in perRendererBest) {
-                var setup = best.Renderer.GetComponent<AutoTightenToBody>();
-                if (setup == null) {
-                    setup = Undo.AddComponent<AutoTightenToBody>(best.Renderer.gameObject);
-                    ConfigureMeshFixSetup(setup, best, ExistingSetupAction.Overwrite);
-                    EditorUtility.SetDirty(setup);
-                    created++;
-                    lastSetup = setup;
-                } else if (existingAction == ExistingSetupAction.Keep) {
-                    kept++;
-                    if (lastSetup == null) lastSetup = setup;
-                } else {
-                    Undo.RecordObject(setup, "Update Avatar QoL clipping mesh fix");
-                    ConfigureMeshFixSetup(setup, best, existingAction);
-                    EditorUtility.SetDirty(setup);
-                    updated++;
-                    lastSetup = setup;
-                }
-            }
-
-            Undo.CollapseUndoOperations(undoGroup);
-
-            if (lastSetup != null) {
-                Selection.activeObject = lastSetup.gameObject;
-                EditorGUIUtility.PingObject(lastSetup.gameObject);
-                MeshFixWindow.Open(lastSetup);
-                _scanSummary =
-                    $"Stored mesh fix setup(s): {created} created, {updated} updated, {kept} kept. " +
-                    $"Selected {PathUtility.GetGameObjectPath(lastSetup.gameObject)}.";
-                if (skipped > 0) _scanSummary += $" Skipped {skipped} self-clipping row(s).";
-            } else {
-                _scanSummary = "No Auto Mesh Fix setup could be created from the selected risk rows.";
-            }
-
-            Repaint();
-        }
-
-        private enum ExistingSetupAction { Keep, Merge, Overwrite }
-
-        private static void ConfigureMeshFixSetup(
-            AutoTightenToBody setup,
-            PhysBoneClippingAnalyzer.Issue issue,
-            ExistingSetupAction mode) {
-            // On Overwrite the renderer refs / names / toggles are always
-            // rewritten. On Merge they are only set if currently null/empty
-            // so the user's manual choices survive.
-            bool overwrite = mode == ExistingSetupAction.Overwrite;
-
-            if (overwrite || setup.garmentRenderer == null) setup.garmentRenderer = issue.Renderer;
-            if (overwrite || setup.bodyRenderer == null) setup.bodyRenderer = issue.NearestSurfaceRenderer;
-            if (overwrite || string.IsNullOrWhiteSpace(setup.garmentTightenBlendShapeName)) {
-                setup.garmentTightenBlendShapeName = $"AUTO_Tighten_{issue.Renderer.name}";
-            }
-            if (overwrite || string.IsNullOrWhiteSpace(setup.bodyHideBlendShapeName)) {
-                setup.bodyHideBlendShapeName = $"AUTO_HideBody_{issue.Renderer.name}";
-            }
-            if (overwrite) {
-                setup.createGarmentTightenShape = true;
-                setup.setGarmentTightenWeightTo100 = true;
-                bool bodyLikeTarget = LooksLikeBodyRenderer(issue.NearestSurfaceRenderer);
-                setup.createBodyHideShape = bodyLikeTarget;
-                setup.setBodyHideWeightTo100 = bodyLikeTarget;
-            }
-
-            float projectedRange = issue.EstimatedMotion + issue.Clearance + 0.015f;
-            if (overwrite) {
-                setup.maxProjectionDistance = Mathf.Clamp(projectedRange, 0.01f, 0.2f);
-                setup.bodyHideRadius = Mathf.Clamp(issue.Clearance + 0.01f, 0.005f, 0.12f);
-                setup.bodyHideDepth = Mathf.Clamp(issue.EstimatedMotion + 0.02f, 0.01f, 0.2f);
-            } else {
-                // Merge: widen to cover what the analysis says is needed, but
-                // never shrink the user's existing dial. This was the previous
-                // behavior; preserved here so default-button-press matches it.
-                setup.maxProjectionDistance = Mathf.Clamp(Mathf.Max(setup.maxProjectionDistance, projectedRange), 0.01f, 0.2f);
-                setup.bodyHideRadius = Mathf.Clamp(Mathf.Max(setup.bodyHideRadius, issue.Clearance + 0.01f), 0.005f, 0.12f);
-                setup.bodyHideDepth = Mathf.Clamp(Mathf.Max(setup.bodyHideDepth, issue.EstimatedMotion + 0.02f), 0.01f, 0.2f);
-            }
-        }
-
-        private static bool LooksLikeBodyRenderer(SkinnedMeshRenderer renderer) {
-            if (renderer == null) return false;
-            var text = (PathUtility.GetGameObjectPath(renderer.gameObject) + " " +
-                        renderer.name + " " +
-                        (renderer.sharedMesh != null ? renderer.sharedMesh.name : string.Empty)).ToLowerInvariant();
-            return text.Contains("body") ||
-                   text.Contains("basebody") ||
-                   text.Contains("base body") ||
-                   text.Contains("skin") ||
-                   text.Contains("torso");
         }
 
         private void ReduceMotion(IEnumerable<PhysBoneClippingAnalyzer.Issue> issues) {

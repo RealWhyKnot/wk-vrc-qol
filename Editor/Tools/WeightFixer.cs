@@ -38,7 +38,7 @@ using UnityEditor;
 using UnityEngine;
 using WhyKnot.Core.Styling;
 using WhyKnot.Core.Utilities;
-using WhyKnot.AvatarQol.MeshFixes.Pipeline;
+using WhyKnot.AvatarQol.Intent;
 
 namespace WhyKnot.AvatarQol.Tools {
 
@@ -72,15 +72,15 @@ namespace WhyKnot.AvatarQol.Tools {
             var result = new FixResult();
             if (issues == null || issues.Count == 0 || animator == null) return result;
 
-            // If an Auto Mesh Fixes preview, play-mode run, or upload is
+            // If an Avatar QoL intent preview, play-mode run, or upload is
             // currently swapping renderer.sharedMesh to an in-memory clone,
             // writing durable weight fixes to that clone would silently
             // disappear when the session restores. Refuse with a clear
             // dialog and let the user stop the session first.
-            if (MeshFixSessionState.IsAnyMeshSessionActive()) {
+            if (AvatarIntentSessionState.IsAnyIntentSessionActive()) {
                 EditorUtility.DisplayDialog(
                     "Avatar QoL - Weight Fixer",
-                    "An Auto Mesh Fixes preview, play-mode run, or upload is currently swapping mesh data on these renderers. " +
+                    "An Avatar QoL intent preview, play-mode run, or upload is currently swapping mesh data on these renderers. " +
                     "Weight fixes written now would land on the temporary clone and be lost when the session ends.\n\n" +
                     "Stop the preview / exit play mode / let the upload finish, then run Fix again.",
                     "OK");
@@ -136,7 +136,36 @@ namespace WhyKnot.AvatarQol.Tools {
             var bones = renderer.bones;
             if (bones == null || bones.Length == 0) return false;
 
-            // Build the (boneIndex → mirror boneIndex) lookup once per
+            int fixedBefore = result.Fixed;
+            // Register the mesh for undo BEFORE writing so the destructive
+            // path keeps its Ctrl+Z behaviour.
+            Undo.RegisterCompleteObjectUndo(editableMesh, "Fix weight contamination");
+            ApplyFixesToMeshInPlace(editableMesh, bones, rendererIssues, animator, result);
+            EditorUtility.SetDirty(editableMesh);
+            return result.Fixed > fixedBefore;
+        }
+
+        // ---- shared apply primitive --------------------------------------
+
+        /// <summary>
+        /// Write fixes for <paramref name="rendererIssues"/> directly into
+        /// <paramref name="editableMesh"/>'s bone-weight buffer. Caller owns
+        /// the mesh lifetime (asset clone, in-memory clone, etc) and any
+        /// undo registration; this method only touches mesh data, never the
+        /// asset database. Used by both the destructive
+        /// <see cref="ApplyFixes"/> path and the runtime
+        /// WeightFixApplyHook session.
+        /// </summary>
+        internal static void ApplyFixesToMeshInPlace(
+                Mesh editableMesh,
+                Transform[] bones,
+                List<IssueRef> rendererIssues,
+                Animator animator,
+                FixResult result) {
+            if (editableMesh == null || bones == null || rendererIssues == null) return;
+            if (rendererIssues.Count == 0) return;
+
+            // Build the (boneIndex -> mirror boneIndex) lookup once per
             // renderer. -1 means "no mirror in this renderer's bones array;
             // fix by zero+renormalize."
             var mirrorIndex = new int[bones.Length];
@@ -189,7 +218,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     // Zero and redistribute. Scale remaining weights by
                     // (1 + lost / remaining) so the per-vertex sum is
                     // preserved. If the vertex's other weights sum to zero
-                    // (degenerate), we just leave the entry zeroed — Unity
+                    // (degenerate), we just leave the entry zeroed -- Unity
                     // handles unnormalised weights without crashing, and
                     // the result is at worst a vertex that sticks to its
                     // local frame.
@@ -216,14 +245,10 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
             }
 
-            // Register the mesh + renderer for undo BEFORE writing.
-            Undo.RegisterCompleteObjectUndo(editableMesh, "Fix weight contamination");
             editableMesh.SetBoneWeights(dstBpv, dstWeights);
-            EditorUtility.SetDirty(editableMesh);
 
             dstWeights.Dispose();
             dstBpv.Dispose();
-            return true;
         }
 
         // ---- mirror-bone resolution --------------------------------------

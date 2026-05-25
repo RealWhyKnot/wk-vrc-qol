@@ -23,6 +23,8 @@ using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.Components;
+using WhyKnot.AvatarQol.Intent;
 using WhyKnot.Core.Styling;
 using WhyKnot.Core.Utilities;
 
@@ -537,25 +539,100 @@ namespace WhyKnot.AvatarQol.Tools {
         // -------- Apply / tweak / advanced --------
 
         private void DrawApplyBar() {
+            bool canApply = PhysBonePlanApplier.SdkAvailable
+                            && _plan != null
+                            && _plan.PhysBones.Count > 0;
+            var avatarRoot = _analysis?.HostAnimator != null ? _analysis.HostAnimator.gameObject : null;
+            bool isPreviewing = AvatarPreviewController.IsPreviewing
+                && AvatarPreviewController.SourceAvatar == avatarRoot;
+
             using (new EditorGUILayout.HorizontalScope()) {
-                bool canApply = PhysBonePlanApplier.SdkAvailable
-                                && _plan != null
-                                && _plan.PhysBones.Count > 0;
                 using (new EditorGUI.DisabledScope(!canApply)) {
                     string label = canApply
                         ? $"4. Apply plan ({_plan.PhysBones.Count} PhysBone(s), {_plan.Colliders.Count} collider(s))"
                         : "4. Apply plan";
                     if (WkStyles.PrimaryButtonInline(
                             new GUIContent(label,
-                                "Create the listed components on the listed bones in one Undo group. Ctrl+Z reverts. VRC SDK 3 must be installed."),
-                            GUILayout.MinWidth(340))) {
+                                "Destructive. Create the listed components on the listed bones in one Undo group. Ctrl+Z reverts."),
+                            GUILayout.MinWidth(260))) {
                         ApplyPlan();
+                    }
+                }
+                using (new EditorGUI.DisabledScope(!canApply || avatarRoot == null)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Add as Intent",
+                                "Non-destructive. Save the bone list + preset choice + tweak values to a WhyKnotPhysBonePresetIntent on the avatar root. The preset then re-spawns at play and at upload, in memory only."),
+                            GUILayout.Height(28), GUILayout.Width(118))) {
+                        AddAsIntent(avatarRoot);
+                    }
+                }
+                using (new EditorGUI.DisabledScope(!canApply || avatarRoot == null || isPreviewing)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Preview",
+                                "Non-destructive. Clone the avatar in place and spawn the preset on the clone so you can verify behaviour without committing components."),
+                            GUILayout.Height(28), GUILayout.Width(92))) {
+                        StartPreview(avatarRoot);
+                    }
+                }
+                using (new EditorGUI.DisabledScope(!isPreviewing)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Stop preview", "Destroy the preview clone and un-hide the source avatar."),
+                            GUILayout.Height(28), GUILayout.Width(110))) {
+                        AvatarPreviewController.StopPreview();
                     }
                 }
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(new GUIContent("Close", "Close this window. Plan is discarded; nothing is written."),
                         GUILayout.Height(28), GUILayout.Width(80))) Close();
             }
+        }
+
+        private void AddAsIntent(GameObject avatarRoot) {
+            if (avatarRoot == null || _plan == null || string.IsNullOrEmpty(_selectedPresetId)) return;
+            var liveBones = _selection.Where(b => b != null).ToList();
+            if (liveBones.Count == 0) return;
+
+            Undo.SetCurrentGroupName("Avatar QoL: add PhysBonePreset intent");
+            int group = Undo.GetCurrentGroup();
+
+            var intent = avatarRoot.GetComponent<WhyKnotPhysBonePresetIntent>();
+            if (intent == null) {
+                intent = Undo.AddComponent<WhyKnotPhysBonePresetIntent>(avatarRoot);
+            } else {
+                Undo.RecordObject(intent, "Update PhysBonePreset intent");
+            }
+            intent.bones = new List<Transform>(liveBones);
+            intent.presetId = _selectedPresetId;
+            intent.tweakPull = _tweakPull;
+            intent.tweakSpring = _tweakSpring;
+            intent.tweakStiff = _tweakStiff;
+            intent.tweakGravity = _tweakGravity;
+            intent.tweakRadius = _tweakRadius;
+            EditorUtility.SetDirty(intent);
+
+            Undo.CollapseUndoOperations(group);
+            Selection.activeGameObject = avatarRoot;
+            EditorGUIUtility.PingObject(intent);
+        }
+
+        private void StartPreview(GameObject avatarRoot) {
+            if (avatarRoot == null || string.IsNullOrEmpty(_selectedPresetId)) return;
+            var liveBones = _selection.Where(b => b != null).ToList();
+            if (liveBones.Count == 0) return;
+            var pull = _tweakPull; var spring = _tweakSpring; var stiff = _tweakStiff;
+            var gravity = _tweakGravity; var radius = _tweakRadius;
+            var presetId = _selectedPresetId;
+
+            AvatarPreviewController.StartPreview(avatarRoot, (cloneRoot, session) => {
+                var remapped = new List<Transform>(liveBones.Count);
+                foreach (var b in liveBones) {
+                    var mapped = AvatarPreviewController.MapToPreview(b);
+                    if (mapped != null) remapped.Add(mapped);
+                }
+                if (remapped.Count == 0) return;
+                PhysBonePresetApplier.ApplyNonDestructive(
+                    remapped, presetId, pull, spring, stiff, gravity, radius, session);
+            });
         }
 
         private void DrawTweakStrip() {

@@ -8,12 +8,12 @@ The framework is small on purpose. There's no third-party reflection (unlike sis
 Editor/
   AvatarQol.cs                         shared utilities (path formatting, etc.)
   HumanoidSideMap.cs                   Humanoid Left/Right/Center bone tagging
+  Common/                              cross-tool intent session + preview controller + PhysBone reinit
   Tools/
-    AutoMeshFixes/                     UI-first nondestructive mesh-fix components + processors
     WeightSanityCheckTool.cs           menu entry points
     WeightSanityCheckWindow.cs         the window + scan logic
 Runtime/
-  AutoMeshFixes/AutoTightenToBody.cs   editor-only stored setup component
+  WeightFixes/WhyKnotWeightFixIntent.cs   IEditorOnly intent component for non-destructive weight fixes
 ```
 
 ## Tool registration

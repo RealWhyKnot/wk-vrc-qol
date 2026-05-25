@@ -17,8 +17,9 @@ Every shipping tool, where to find it, what it does.
 
 **Tunables:**
 
-- **Weight floor** *(default 0.01)* -- weights below this are noise and skipped.
-- **Center margin** *(default 0.02 m in Hips local space)* -- vertices closer to the avatar's centerline than this aren't classified as either side. Avoids false flags on the spine.
+- **Weight floor** *(default 0)* -- weights below this are noise and skipped. 0 surfaces every cross-side weight, however small; raise if a body mesh is flagging too much.
+- **Center margin** *(default 0 m in Hips local space)* -- vertices closer to the avatar's centerline than this aren't classified as either side. 0 disables the stripe so every vertex is Left or Right; raise toward 0.005 m if bind-pose noise around the spine produces false positives.
+- **Scan centre-band vertices** *(default off)* -- when on, centre-stripe vertices get scanned against the higher centre threshold. Only meaningful once Center margin is raised above 0.
 - **Show gizmos in Scene view** -- draws a red sphere at every flagged vertex's world position.
 - **Exclude renderers** -- opt-out list for meshes that legitimately bridge sides (capes, dresses, tails).
 

@@ -1,14 +1,13 @@
 {
-    "name": "dev.whyknot.avatar-qol.Editor",
-    "rootNamespace": "WhyKnot.AvatarQol",
+    "name": "dev.whyknot.avatar-qol.Tests.Editor",
+    "rootNamespace": "WhyKnot.AvatarQol.Tests",
     "references": [
+        "dev.whyknot.avatar-qol.Editor",
         "dev.whyknot.avatar-qol.Runtime",
         "dev.whyknot.core.Editor",
-        "VRC.SDKBase.Editor.BuildPipeline",
-        "VRC.SDKBase.Editor",
         "VRC.SDK3A",
-        "VRC.SDK3.Dynamics.PhysBone",
-        "VRC.Dynamics"
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
     ],
     "includePlatforms": [
         "Editor"
@@ -19,12 +18,6 @@
     "precompiledReferences": [],
     "autoReferenced": false,
     "defineConstraints": [],
-    "versionDefines": [
-        {
-            "name": "com.vrchat.avatars",
-            "expression": "3.0.0",
-            "define": "VRC_SDK_VRCSDK3"
-        }
-    ],
+    "versionDefines": [],
     "noEngineReferences": false
 }

@@ -15,11 +15,12 @@
 //     re-parent onto the merge-into bone first so any rig sitting underneath
 //     it stays in place (world transforms preserved).
 //
-// Mesh handling mirrors WeightFixer: FBX/OBJ/DAE/glTF sub-asset meshes
-// can't be modified in place (the importer overwrites them on every
-// reimport), so we clone to a fresh `.mesh` asset under
-// "Assets/AvatarQol Generated/", assign the clone to renderer.sharedMesh,
-// and write the merged weights to the clone.
+// Window-level Apply mutates .mesh assets immediately. "Add as Intent"
+// stores the pair list on a WhyKnotBoneMergerIntent on the avatar root --
+// the merge then re-runs against whatever mesh the renderer currently
+// has at play and at upload, in memory only, so a Blender re-import does
+// not silently drop the fix. Preview clones the avatar and applies the
+// merge to the clone so the user can sanity-check before committing.
 //
 // Mathematical caveat: weight-merging is visually identical to the
 // original skinning only when the two bones share the same rest pose
@@ -29,35 +30,24 @@
 // to linear blend skinning, not a tool bug.
 
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.BoneMerger;
+using WhyKnot.AvatarQol.Components;
+using WhyKnot.AvatarQol.Intent;
 using WhyKnot.Core.Styling;
-using WhyKnot.Core.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 
     internal sealed class BoneMergerWindow : EditorWindow {
 
-        [System.Serializable]
-        private sealed class BonePair {
-            // The bone whose weights move OFF (and that gets deleted, if the
-            // option is on). Named explicitly to avoid the "which is source,
-            // which is target?" confusion.
-            public Transform mergeFrom;
-            // The bone that picks up the weights and survives.
-            public Transform mergeInto;
-        }
-
         [SerializeField] private Animator _animator;
-        [SerializeField] private List<BonePair> _pairs = new List<BonePair>();
+        [SerializeField] private List<BoneMergerPair> _pairs = new List<BoneMergerPair>();
         [SerializeField] private bool _deleteMergedBones = true;
         [SerializeField] private bool _reparentChildren  = true;
 
         private const string WikiUrl = "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#bone-merger";
-        private const string GeneratedFolder = "Assets/AvatarQol Generated";
 
         private string _resultSummary = "";
         private readonly List<string> _resultDetail = new List<string>();
@@ -68,7 +58,7 @@ namespace WhyKnot.AvatarQol.Tools {
         internal static void Open(bool prefillFromSelection) {
             var w = GetWindow<BoneMergerWindow>(false, "Bone Merger", true);
             w.titleContent = new GUIContent("Avatar QoL -- Bone Merger");
-            w.minSize = new Vector2(560, 440);
+            w.minSize = new Vector2(560, 460);
             if (prefillFromSelection) w.PrefillFromSelection();
             w.Show();
             w.Focus();
@@ -90,7 +80,7 @@ namespace WhyKnot.AvatarQol.Tools {
             using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             DrawTitleBar();
             WkStyles.Notice(NoticeKind.Info,
-                "Folds a stray duplicate bone (e.g. Blender's Boob_L.001) into its kept counterpart. Skin weights transfer across every SkinnedMeshRenderer under the avatar, then the merged-away bone is removed.");
+                "Folds a stray duplicate bone (e.g. Blender's Boob_L.001) into its kept counterpart. Apply mutates .mesh assets and (optionally) destroys the merged-away bone. Add as Intent stores the pair list on the avatar and applies the merge in memory at play / build instead. Preview clones the avatar and shows the merged result without committing.");
             DrawAvatar();
             EditorGUILayout.Space(2);
             DrawPairs();
@@ -130,6 +120,10 @@ namespace WhyKnot.AvatarQol.Tools {
                 if (_animator != null) {
                     int smrCount = _animator.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length;
                     EditorGUILayout.LabelField($"{smrCount} SkinnedMeshRenderer(s) under this Animator.", WkStyles.Muted);
+                    var existingIntent = _animator.GetComponent<WhyKnotBoneMergerIntent>();
+                    if (existingIntent != null) {
+                        EditorGUILayout.LabelField($"Existing intent on this avatar: {existingIntent.pairs?.Count ?? 0} pair(s).", WkStyles.Muted);
+                    }
                 }
             }
         }
@@ -143,8 +137,6 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 EditorGUILayout.Space(2);
 
-                // Column header so the direction is unmistakable even without
-                // hovering tooltips.
                 using (new EditorGUILayout.HorizontalScope()) {
                     EditorGUILayout.LabelField(
                         new GUIContent("Merge this bone",
@@ -163,7 +155,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 } else {
                     int removeAt = -1;
                     for (int i = 0; i < _pairs.Count; i++) {
-                        var pair = _pairs[i] ?? (_pairs[i] = new BonePair());
+                        var pair = _pairs[i] ?? (_pairs[i] = new BoneMergerPair());
                         using (new EditorGUILayout.HorizontalScope()) {
                             var nextFrom = (Transform)EditorGUILayout.ObjectField(
                                 new GUIContent(GUIContent.none.image, "The bone whose weights are being transferred away. This is the bone that disappears."),
@@ -185,8 +177,6 @@ namespace WhyKnot.AvatarQol.Tools {
                                 removeAt = i;
                             }
                         }
-                        // Surface inline problems so the user sees them before
-                        // hitting Apply.
                         if (pair.mergeFrom != null && pair.mergeInto != null && pair.mergeFrom == pair.mergeInto) {
                             EditorGUILayout.LabelField("   Both fields point at the same bone -- nothing to merge.", WkStyles.Muted);
                         }
@@ -198,7 +188,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     if (GUILayout.Button(
                             new GUIContent("Add row", "Append an empty pair slot. Drag two bones onto it after."),
                             GUILayout.Width(80))) {
-                        _pairs.Add(new BonePair());
+                        _pairs.Add(new BoneMergerPair());
                         ClearResults();
                     }
                     using (new EditorGUI.DisabledScope(_pairs.Count == 0)) {
@@ -215,8 +205,8 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawOptions() {
-            using (WkStyles.Section("3. Options",
-                    "Defaults match the typical Blender duplicate-bone cleanup workflow.")) {
+            using (WkStyles.Section("3. Options (destructive Apply only)",
+                    "These options only affect the destructive Apply button. Add as Intent never touches the bone hierarchy.")) {
                 _deleteMergedBones = EditorGUILayout.ToggleLeft(
                     new GUIContent("Delete the merged-away bone after applying",
                         "When on, the LEFT bone in each row gets removed from the hierarchy after its weights are transferred. Turn off if you just want to re-weight without changing the rig."),
@@ -231,13 +221,41 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawApplyBar() {
+            bool canApply = CanApply();
+            var avatarRoot = _animator != null ? _animator.gameObject : null;
+            bool isPreviewing = AvatarPreviewController.IsPreviewing
+                && AvatarPreviewController.SourceAvatar == avatarRoot;
+
             using (new EditorGUILayout.HorizontalScope()) {
-                using (new EditorGUI.DisabledScope(!CanApply())) {
+                using (new EditorGUI.DisabledScope(!canApply)) {
                     if (WkStyles.PrimaryButtonInline(
                             new GUIContent("Apply merge",
-                                "Transfer skin weights across every renderer under the Animator, then (if enabled) delete the merged-away bones. Wrapped in a single Undo step."),
+                                "Destructive. Clone the affected meshes to .mesh assets under Assets/AvatarQol Generated/, rewire renderers, and (if enabled) delete merged-away bones. Wrapped in a single Undo step."),
                             GUILayout.MinWidth(140))) {
-                        Apply();
+                        ApplyDestructive();
+                    }
+                }
+                using (new EditorGUI.DisabledScope(!canApply || avatarRoot == null)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Add as Intent",
+                                "Non-destructive. Save the pair list to a WhyKnotBoneMergerIntent on the avatar root. The merge then re-runs in memory at play mode and at upload, never touching mesh assets or bone GameObjects."),
+                            GUILayout.Height(28), GUILayout.Width(118))) {
+                        AddAsIntent(avatarRoot);
+                    }
+                }
+                using (new EditorGUI.DisabledScope(!canApply || avatarRoot == null || isPreviewing)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Preview",
+                                "Non-destructive. Clone the avatar in place and apply the merge to the clone so you can see the deformation without committing changes."),
+                            GUILayout.Height(28), GUILayout.Width(92))) {
+                        StartPreview(avatarRoot);
+                    }
+                }
+                using (new EditorGUI.DisabledScope(!isPreviewing)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Stop preview", "Destroy the preview clone and un-hide the source avatar."),
+                            GUILayout.Height(28), GUILayout.Width(110))) {
+                        AvatarPreviewController.StopPreview();
                     }
                 }
                 using (new EditorGUI.DisabledScope(_resultSummary == "" && _resultDetail.Count == 0)) {
@@ -252,6 +270,12 @@ namespace WhyKnot.AvatarQol.Tools {
                 if (!string.IsNullOrEmpty(_resultSummary)) {
                     EditorGUILayout.LabelField(_resultSummary, WkStyles.Muted);
                 }
+            }
+
+            if (_deleteMergedBones) {
+                EditorGUILayout.HelpBox(
+                    "Heads-up: 'Delete merged-away bones' is on, so Apply will mutate the scene hierarchy. 'Add as Intent' and 'Preview' ignore this flag -- they never delete bones.",
+                    MessageType.Info);
             }
         }
 
@@ -279,329 +303,93 @@ namespace WhyKnot.AvatarQol.Tools {
             return false;
         }
 
-        // Reject pair lists that can't be sequenced cleanly:
-        //   - Same bone listed as the merge-from in two pairs with DIFFERENT
-        //     destinations -- ambiguous.
-        //   - A cycle through mergeFrom -> mergeInto edges. Cycles cause the
-        //     chain-collapse step to no-op every weight redirect AND the
-        //     deletion phase would still remove the bones, leaving orphaned
-        //     weights pointing at destroyed slots. Easier to refuse upfront.
-        private static bool ValidatePairs(List<BonePair> pairs, out string message) {
-            message = "";
-            var fromToInto = new Dictionary<Transform, Transform>();
-            foreach (var p in pairs) {
-                if (fromToInto.TryGetValue(p.mergeFrom, out var existing)) {
-                    if (existing != p.mergeInto) {
-                        message = $"\"{p.mergeFrom.name}\" is set to merge into two different bones (\"{existing.name}\" and \"{p.mergeInto.name}\"). Pick one and try again.";
-                        return false;
-                    }
-                    continue; // exact duplicate row is fine
-                }
-                fromToInto[p.mergeFrom] = p.mergeInto;
+        // ------ Action entry points ---------------------------------------
+
+        private void ApplyDestructive() {
+            ClearResults();
+            var result = BoneMergerOp.ApplyDestructive(_animator, _pairs, _deleteMergedBones, _reparentChildren);
+            _resultSummary = result.Summary;
+            _resultDetail.AddRange(result.Detail);
+            if (result.ClonedPaths.Count > 0) {
+                _resultDetail.Add("");
+                _resultDetail.Add("Cloned meshes (your FBX was untouched):");
+                foreach (var p in result.ClonedPaths) _resultDetail.Add($"  {p}");
             }
-            foreach (var start in fromToInto.Keys) {
-                var visited = new HashSet<Transform>();
-                var cur = start;
-                while (fromToInto.TryGetValue(cur, out var next)) {
-                    if (!visited.Add(cur)) {
-                        message = $"Cycle in the pair list (e.g. \"{cur.name}\" is reachable from itself). Break the loop and try again.";
-                        return false;
-                    }
-                    cur = next;
-                }
-            }
-            return true;
         }
 
-        // ------ Apply ------------------------------------------------------
-
-        private void Apply() {
+        private void AddAsIntent(GameObject avatarRoot) {
             ClearResults();
-            if (_animator == null) {
-                _resultSummary = "Pick an Animator first.";
-                return;
-            }
+            if (avatarRoot == null) return;
             var validPairs = _pairs
                 .Where(p => p != null && p.mergeFrom != null && p.mergeInto != null && p.mergeFrom != p.mergeInto)
                 .ToList();
             if (validPairs.Count == 0) {
-                _resultSummary = "Add at least one pair (LEFT bone and RIGHT bone, both set, not the same bone).";
+                _resultSummary = "Add at least one pair before saving as intent.";
                 return;
             }
 
-            if (!ValidatePairs(validPairs, out string conflictMessage)) {
-                _resultSummary = conflictMessage;
+            Undo.SetCurrentGroupName("Avatar QoL: add BoneMerger intent");
+            int group = Undo.GetCurrentGroup();
+
+            var intent = avatarRoot.GetComponent<WhyKnotBoneMergerIntent>();
+            if (intent == null) {
+                intent = Undo.AddComponent<WhyKnotBoneMergerIntent>(avatarRoot);
+            } else {
+                Undo.RecordObject(intent, "Update BoneMerger intent");
+            }
+            intent.pairs = validPairs.Select(p => new BoneMergerPair {
+                mergeFrom = p.mergeFrom,
+                mergeInto = p.mergeInto,
+            }).ToList();
+            intent.deleteMergedBones = _deleteMergedBones;
+            intent.reparentChildren = _reparentChildren;
+            EditorUtility.SetDirty(intent);
+
+            Undo.CollapseUndoOperations(group);
+
+            _resultSummary = $"Saved {intent.pairs.Count} pair(s) to BoneMerger intent on {avatarRoot.name}.";
+            if (_deleteMergedBones) {
+                _resultDetail.Add("Note: 'Delete merged-away bones' is recorded on the intent but is ignored by the build / play hooks -- it only matters when the Bone Merger window's Apply button runs.");
+            }
+            Selection.activeGameObject = avatarRoot;
+            EditorGUIUtility.PingObject(intent);
+        }
+
+        private void StartPreview(GameObject avatarRoot) {
+            ClearResults();
+            if (avatarRoot == null) return;
+            var capturedPairs = _pairs
+                .Where(p => p != null && p.mergeFrom != null && p.mergeInto != null && p.mergeFrom != p.mergeInto)
+                .Select(p => new BoneMergerPair { mergeFrom = p.mergeFrom, mergeInto = p.mergeInto })
+                .ToList();
+            if (capturedPairs.Count == 0) {
+                _resultSummary = "Add at least one valid pair before previewing.";
                 return;
             }
-
-            var renderers = _animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            if (renderers.Length == 0) {
-                _resultSummary = "The picked Animator has no SkinnedMeshRenderers underneath.";
-                return;
+            var result = AvatarPreviewController.StartPreview(avatarRoot, (cloneRoot, session) => {
+                var cloneAnimator = cloneRoot.GetComponentInChildren<Animator>(true);
+                if (cloneAnimator == null) return;
+                // Pair entries reference SOURCE-avatar transforms. The runner
+                // operates against the clone, so remap each transform to its
+                // clone equivalent via hierarchy path before applying.
+                var remapped = capturedPairs
+                    .Select(p => new BoneMergerPair {
+                        mergeFrom = AvatarPreviewController.MapToPreview(p.mergeFrom),
+                        mergeInto = AvatarPreviewController.MapToPreview(p.mergeInto),
+                    })
+                    .Where(p => p.mergeFrom != null && p.mergeInto != null)
+                    .ToList();
+                if (remapped.Count == 0) return;
+                BoneMergerOp.ApplyNonDestructive(cloneAnimator, remapped, session);
+            });
+            if (result.Errors.Count > 0) {
+                _resultSummary = "Preview failed: " + result.Errors[0];
+                _resultDetail.AddRange(result.Errors);
+            } else if (!AvatarPreviewController.IsPreviewing) {
+                _resultSummary = "Preview ran but produced no changes (no pair matched any renderer's bones[]).";
+            } else {
+                _resultSummary = $"Previewing merge on {avatarRoot.name}. Source hidden in Scene view; Stop Preview reverts.";
             }
-
-            int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Avatar QoL: Merge bones");
-
-            int renderersTouched = 0;
-            int meshesCloned = 0;
-            int weightsRedirected = 0;
-            int unreadableRenderers = 0;
-            var clonedPaths = new List<string>();
-            var perPairFlaggedRenderers = new Dictionary<BonePair, int>();
-
-            try {
-                foreach (var renderer in renderers) {
-                    if (renderer == null || renderer.sharedMesh == null) continue;
-                    if (!renderer.sharedMesh.isReadable) {
-                        unreadableRenderers++;
-                        _resultDetail.Add($"SKIP {RendererPath(renderer)} -- mesh not readable. Enable Read/Write on the model importer.");
-                        continue;
-                    }
-                    var rendererResult = MergeOnRenderer(renderer, validPairs, ref meshesCloned, clonedPaths);
-                    if (rendererResult.RedirectsApplied > 0) {
-                        renderersTouched++;
-                        weightsRedirected += rendererResult.RedirectsApplied;
-                        foreach (var pair in rendererResult.PairsThatMatched) {
-                            perPairFlaggedRenderers.TryGetValue(pair, out var n);
-                            perPairFlaggedRenderers[pair] = n + 1;
-                        }
-                        _resultDetail.Add($"OK   {RendererPath(renderer)} -- redirected {rendererResult.RedirectsApplied} weight slot(s){(rendererResult.WasCloned ? " (cloned mesh)" : "")}.");
-                    }
-                }
-
-                // Bone deletion / re-parenting. Done after all weight edits so
-                // the bones[] arrays we just walked stay valid.
-                int bonesDeleted = 0;
-                int childrenReparented = 0;
-                if (_deleteMergedBones) {
-                    foreach (var pair in validPairs) {
-                        if (pair.mergeFrom == null || pair.mergeInto == null) continue;
-                        if (_reparentChildren) {
-                            var kids = new List<Transform>();
-                            foreach (Transform c in pair.mergeFrom) kids.Add(c);
-                            foreach (var c in kids) {
-                                Undo.SetTransformParent(c, pair.mergeInto, "Re-parent under kept bone");
-                                childrenReparented++;
-                            }
-                        }
-                        Undo.DestroyObjectImmediate(pair.mergeFrom.gameObject);
-                        bonesDeleted++;
-                    }
-                }
-
-                if (meshesCloned > 0) AssetDatabase.SaveAssets();
-                Undo.CollapseUndoOperations(undoGroup);
-
-                // Warn about pairs that didn't apply to any renderer -- usually
-                // means the user dragged in a bone that isn't in any
-                // SkinnedMeshRenderer's bones array.
-                var unusedPairs = new List<string>();
-                foreach (var pair in validPairs) {
-                    if (!perPairFlaggedRenderers.ContainsKey(pair)) {
-                        unusedPairs.Add($"{NameOrDestroyed(pair.mergeFrom)} -> {NameOrDestroyed(pair.mergeInto)}");
-                    }
-                }
-                if (unusedPairs.Count > 0) {
-                    _resultDetail.Add($"WARN {unusedPairs.Count} pair(s) didn't match any renderer's bone list: {string.Join(", ", unusedPairs)}. The bones may not be skinned to any mesh under this Animator, or the merge-into bone may be absent from the renderer's bone array.");
-                }
-
-                _resultSummary = BuildSummary(
-                    renderersTouched, weightsRedirected, meshesCloned,
-                    bonesDeleted, childrenReparented, unreadableRenderers);
-                if (meshesCloned > 0) {
-                    _resultDetail.Add("");
-                    _resultDetail.Add("Cloned meshes (your FBX was untouched):");
-                    foreach (var p in clonedPaths) _resultDetail.Add($"  {p}");
-                }
-            } catch (System.Exception ex) {
-                Undo.RevertAllInCurrentGroup();
-                AvatarQolLogger.Instance.Exception(ex);
-                _resultSummary = "Merge failed -- nothing was changed. See console for the exception.";
-            }
-        }
-
-        private static string BuildSummary(int renderersTouched, int weightsRedirected, int meshesCloned,
-                                           int bonesDeleted, int childrenReparented, int unreadable) {
-            var parts = new List<string>();
-            parts.Add($"{weightsRedirected} weight(s) on {renderersTouched} renderer(s)");
-            if (meshesCloned > 0) parts.Add($"{meshesCloned} mesh(es) cloned");
-            if (bonesDeleted > 0) parts.Add($"{bonesDeleted} bone(s) deleted");
-            if (childrenReparented > 0) parts.Add($"{childrenReparented} child(ren) re-parented");
-            if (unreadable > 0)   parts.Add($"{unreadable} renderer(s) skipped (mesh not readable)");
-            return string.Join(", ", parts) + ".";
-        }
-
-        // ------ Per-renderer merge ----------------------------------------
-
-        private struct RendererResult {
-            public int RedirectsApplied;
-            public bool WasCloned;
-            public List<BonePair> PairsThatMatched;
-        }
-
-        private RendererResult MergeOnRenderer(SkinnedMeshRenderer renderer, List<BonePair> validPairs,
-                                               ref int meshesCloned, List<string> clonedPaths) {
-            var result = new RendererResult { PairsThatMatched = new List<BonePair>() };
-            var bones = renderer.bones;
-            if (bones == null || bones.Length == 0) return result;
-
-            // Build the (bone-index -> bone-index) redirect map for THIS
-            // renderer. A pair only applies if the merge-from bone is in
-            // bones[] for this renderer; the merge-into bone must also be in
-            // bones[] (we don't currently grow the bones array).
-            var redirect = new Dictionary<int, int>(validPairs.Count);
-            var pairsForRenderer = new List<BonePair>();
-            foreach (var pair in validPairs) {
-                int srcIdx = IndexOf(bones, pair.mergeFrom);
-                if (srcIdx < 0) continue;
-                int dstIdx = IndexOf(bones, pair.mergeInto);
-                if (dstIdx < 0) {
-                    _resultDetail.Add($"WARN {RendererPath(renderer)} -- bone \"{NameOrDestroyed(pair.mergeInto)}\" is not in this renderer's bones[]. Skipping that pair for this mesh.");
-                    continue;
-                }
-                redirect[srcIdx] = dstIdx;
-                pairsForRenderer.Add(pair);
-            }
-            if (redirect.Count == 0) return result;
-
-            // Collapse chains a -> b -> c so every key maps to its final
-            // destination, with a cycle guard.
-            foreach (var key in redirect.Keys.ToList()) {
-                int v = redirect[key];
-                var visited = new HashSet<int> { key };
-                while (redirect.TryGetValue(v, out int next) && visited.Add(v)) {
-                    v = next;
-                }
-                redirect[key] = v;
-            }
-
-            // Resolve to an editable mesh -- clone if the sharedMesh is owned
-            // by a model importer (FBX/OBJ/etc).
-            var sharedMesh = renderer.sharedMesh;
-            var resolved = FbxMeshUtility.ResolveEditableMesh(
-                renderer, sharedMesh, "(MergedBones)", "Create merged mesh", GeneratedFolder);
-            var editableMesh = resolved.Mesh;
-            if (editableMesh == null) return result;
-            if (resolved.WasCloned) {
-                meshesCloned++;
-                clonedPaths.Add(resolved.ClonedPath);
-            }
-            result.WasCloned = resolved.WasCloned;
-
-            var srcBpv = editableMesh.GetBonesPerVertex();
-            var srcWeights = editableMesh.GetAllBoneWeights();
-            int vertCount = srcBpv.Length;
-            int totalWeights = srcWeights.Length;
-
-            // Build output buffers. The output may shrink if the redirect
-            // causes two slots on the same vertex to collapse, so we build
-            // a list and then materialise a NativeArray. try/finally so the
-            // Temp allocation always releases, even on exception.
-            var newBpv = new NativeArray<byte>(vertCount, Allocator.Temp);
-            try {
-                var newWeights = new List<BoneWeight1>(totalWeights);
-
-                // Scratch buffers for per-vertex combine. 64 slots is way
-                // over anything Unity actually ships.
-                const int Scratch = 64;
-                var scratchIdx = new int[Scratch];
-                var scratchWt  = new float[Scratch];
-
-                int cursor = 0;
-                int redirectsApplied = 0;
-
-                for (int v = 0; v < vertCount; v++) {
-                    int count = srcBpv[v];
-                    if (count == 0) { newBpv[v] = 0; continue; }
-
-                    // Fast-path: nothing on this vertex maps through the
-                    // redirect, pass through unchanged.
-                    bool touched = false;
-                    for (int k = 0; k < count; k++) {
-                        if (redirect.ContainsKey(srcWeights[cursor + k].boneIndex)) { touched = true; break; }
-                    }
-                    if (!touched) {
-                        for (int k = 0; k < count; k++) newWeights.Add(srcWeights[cursor + k]);
-                        newBpv[v] = (byte)count;
-                        cursor += count;
-                        continue;
-                    }
-
-                    // Slow path: redirect + combine duplicates into scratch.
-                    int n = 0;
-                    for (int k = 0; k < count; k++) {
-                        var bw = srcWeights[cursor + k];
-                        int idx = bw.boneIndex;
-                        if (redirect.TryGetValue(idx, out int newIdx)) {
-                            idx = newIdx;
-                            redirectsApplied++;
-                        }
-                        int existing = -1;
-                        for (int s = 0; s < n; s++) {
-                            if (scratchIdx[s] == idx) { existing = s; break; }
-                        }
-                        if (existing >= 0) {
-                            scratchWt[existing] += bw.weight;
-                        } else if (n < Scratch) {
-                            scratchIdx[n] = idx;
-                            scratchWt[n]  = bw.weight;
-                            n++;
-                        }
-                    }
-                    cursor += count;
-
-                    // Sort by weight descending so the most-influential
-                    // slots come first (matches how every other Unity
-                    // weight pipeline orders them).
-                    for (int a = 0; a < n - 1; a++) {
-                        int maxK = a;
-                        for (int b = a + 1; b < n; b++) if (scratchWt[b] > scratchWt[maxK]) maxK = b;
-                        if (maxK != a) {
-                            (scratchWt[a],  scratchWt[maxK])  = (scratchWt[maxK],  scratchWt[a]);
-                            (scratchIdx[a], scratchIdx[maxK]) = (scratchIdx[maxK], scratchIdx[a]);
-                        }
-                    }
-
-                    int emitted = 0;
-                    for (int s = 0; s < n; s++) {
-                        if (scratchWt[s] <= 0f) continue;
-                        newWeights.Add(new BoneWeight1 { boneIndex = scratchIdx[s], weight = scratchWt[s] });
-                        emitted++;
-                    }
-                    newBpv[v] = (byte)emitted;
-                }
-
-                if (redirectsApplied > 0) {
-                    using (var newWeightsNative = new NativeArray<BoneWeight1>(newWeights.ToArray(), Allocator.Temp)) {
-                        Undo.RegisterCompleteObjectUndo(editableMesh, "Merge bone weights");
-                        editableMesh.SetBoneWeights(newBpv, newWeightsNative);
-                        EditorUtility.SetDirty(editableMesh);
-                    }
-                    result.RedirectsApplied = redirectsApplied;
-                    result.PairsThatMatched = pairsForRenderer;
-                }
-                return result;
-            } finally {
-                newBpv.Dispose();
-            }
-        }
-
-
-        // ------ Helpers ----------------------------------------------------
-
-        private static int IndexOf(Transform[] arr, Transform value) {
-            if (arr == null || value == null) return -1;
-            for (int i = 0; i < arr.Length; i++) if (arr[i] == value) return i;
-            return -1;
-        }
-
-        private static string NameOrDestroyed(Transform t) {
-            return t == null ? "(destroyed)" : t.name;
-        }
-
-        private static string RendererPath(SkinnedMeshRenderer r) {
-            return r == null ? "(null)" : PathUtility.GetGameObjectPath(r.gameObject);
         }
 
         private void ClearResults() {

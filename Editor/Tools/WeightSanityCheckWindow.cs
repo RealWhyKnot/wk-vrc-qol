@@ -57,6 +57,9 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.Components;
+using WhyKnot.AvatarQol.Intent;
+using WhyKnot.AvatarQol.WeightFixes;
 using WhyKnot.Core.Styling;
 using WhyKnot.Core.Utilities;
 
@@ -71,18 +74,23 @@ namespace WhyKnot.AvatarQol.Tools {
         // specific outfit / mesh while debugging without touching the
         // exclusion list.
         [SerializeField] private SkinnedMeshRenderer _limitToRenderer;
-        // Lower default than the original 0.01: real bleed in the 0.001-0.005
-        // range still causes visible stretching during animation. Tunable
-        // upward if it's flagging too much.
-        [SerializeField] private float _weightFloor   = 0.005f;
-        [SerializeField] private float _centerMargin  = 0.02f;
-        // Vertices in the centre stripe (|x| < centerMargin in Hips local
-        // space) are scanned only when _scanCenterBand is on. Even then
-        // their threshold for "this side weight is suspicious" is higher
-        // than the regular floor: centre-band cross-side bleed is mostly
-        // legitimate (spine vertices with a tiny shoulder weight, etc.).
-        // 0.10 = 10% of total influence — a clear majority weight on one
-        // side from what should be a centre-anchored vertex.
+        // Detection defaults are maximum-sensitivity: every cross-side
+        // weight surfaces and the user filters by category in the issue
+        // list. Earlier defaults (weightFloor 0.001, centerMargin 0.005,
+        // scanCenterBand true) skipped real bleed that mattered on real
+        // garments -- weights in the 0.0001..0.001 band still stretch the
+        // mesh visibly under motion, and the centre stripe swallowed
+        // accessories sitting on the centerline.
+        //   weightFloor 0 -- no floor; every non-zero cross-side weight
+        //     is flagged. Tune up if a body mesh produces too much noise.
+        //   centerMargin 0 -- no centre stripe; every vertex is Left or
+        //     Right by sign of Hips-local X. Tune up only when bind-pose
+        //     noise around the spine produces false positives.
+        //   scanCenterBand false -- moot at margin 0 (no Center vertices
+        //     exist), kept off so toggling centerMargin up later does not
+        //     silently re-enable the higher centre threshold path.
+        [SerializeField] private float _weightFloor   = 0f;
+        [SerializeField] private float _centerMargin  = 0f;
         [SerializeField] private bool  _scanCenterBand = false;
         [SerializeField] private float _centerCrossSideFloor = 0.10f;
         [SerializeField] private bool  _showGizmos    = true;
@@ -109,11 +117,16 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private const string WikiUrl = "https://github.com/RealWhyKnot/vrc-avatar-qol/wiki/Tools-Overview#weight-sanity-check";
 
-        private readonly List<Issue> _issues = new List<Issue>();
+        private readonly List<DetectedIssue> _issues = new List<DetectedIssue>();
         // Tracked per scan so we can offer a "Enable Read/Write on these N
         // meshes" button below the scan output.
         private readonly List<SkinnedMeshRenderer> _nonReadableRenderers = new List<SkinnedMeshRenderer>();
         private string _scanSummary = "";
+        // Aggregate of vertex-side classification across the last scan,
+        // used by DrawSanityBanner when the issue list is empty despite
+        // the mesh having plenty of geometry.
+        private int _lastScanLeftRightVerts;
+        private int _lastScanCenterVerts;
         private Vector2 _scroll;
 
         // Preview state — at most one bone is animated at a time. Bone is
@@ -241,16 +254,16 @@ namespace WhyKnot.AvatarQol.Tools {
                     "Knobs that control how aggressive the scanner is. Sensible defaults; tune only when the issue list is too noisy or too quiet.")) {
                 WkStyles.LabeledField(
                     new GUIContent("Weight floor",
-                        "Weights below this are ignored as noise. Range 0–0.5; 0.005 ≈ 0.5% influence per vertex. Raise toward 0.02 if you see false positives; lower toward 0.001 if real bleed (≤ 0.005) is being missed."),
+                        "Weights below this fraction are ignored as noise. Default 0 surfaces every cross-side weight, however small -- bleed in the 0.0001..0.001 band still stretches the mesh visibly under motion. Raise toward 0.02 if a body mesh is flagging too much. Range 0..0.5."),
                     () => _weightFloor = EditorGUILayout.Slider(_weightFloor, 0f, 0.5f));
                 WkStyles.LabeledField(
                     new GUIContent("Center margin",
-                        "Half-width of the centre stripe in metres, in Hips local X. Vertices within ±this distance of the spine count as Center, not Left/Right. 0–0.2 m. 0.02 m ≈ 2 cm. Increase if shoulder/clavicle vertices keep getting flagged; decrease if real cross-side bleed near the spine is being missed."),
+                        "Half-width of the on-spine centre stripe in metres, in Hips local X. Vertices within +/- this distance of the spine count as Center. Default 0 disables the stripe so every vertex is Left or Right by sign of Hips-local X. Raise toward 0.005 only if bind-pose noise around the spine is producing false positives. Range 0..0.2 m."),
                     () => _centerMargin = EditorGUILayout.Slider(_centerMargin, 0f, 0.2f));
                 using (new EditorGUILayout.HorizontalScope()) {
                     _scanCenterBand = EditorGUILayout.ToggleLeft(
                         new GUIContent("Scan centre-band vertices",
-                            "When on, vertices in the centre stripe are also scanned for cross-side weights. Off by default — centre-band bleed (spine ↔ clavicle, hip ↔ pelvis) is usually legitimate and floods the issue list."),
+                            "When on, centre-stripe vertices are scanned for cross-side weights using the higher centre threshold below (rather than skipped). Off by default; only meaningful once Center margin is raised above 0 so centre-stripe vertices actually exist."),
                         _scanCenterBand, GUILayout.Width(220));
                 }
                 if (_scanCenterBand) {
@@ -357,12 +370,36 @@ namespace WhyKnot.AvatarQol.Tools {
                         "Step 3. Each row is one suspicious bone weight on one vertex. The bracketed tag shows confidence: [humanoid] = bone is on the wrong Humanoid side, [spatial] = inferred from world position, [center] = mid-line bleed."),
                     WkStyles.SubsectionTitle);
                 GUILayout.FlexibleSpace();
+                bool isPreviewing = AvatarPreviewController.IsPreviewing
+                    && _animator != null
+                    && AvatarPreviewController.SourceAvatar == _animator.gameObject;
                 using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
                     if (WkStyles.PrimaryButtonInline(
+                            new GUIContent("Save fixes as component",
+                                "Recommended for fixes you want to survive a Blender re-import. Adds (or updates) a WhyKnotWeightFixIntent component on each renderer with issues. At play-mode entry and at avatar upload, the fix re-scans the renderer's CURRENT mesh and applies corrections to an in-memory clone -- the source mesh asset is never modified, and the fix follows the mesh through topology changes."),
+                            GUILayout.Width(190))) {
+                        SaveIssuesAsComponents();
+                    }
+                    using (new EditorGUI.DisabledScope(_animator == null || isPreviewing)) {
+                        if (GUILayout.Button(
+                                new GUIContent("Preview",
+                                    "Non-destructive. Clone the avatar in place and apply the listed fixes to the clone so you can see the deformation without committing changes."),
+                                GUILayout.Height(28), GUILayout.Width(96))) {
+                            StartPreview(new List<DetectedIssue>(_issues));
+                        }
+                    }
+                    if (GUILayout.Button(
                             new GUIContent($"Fix all ({_issues.Count})",
-                                "Apply fixes to every issue currently in the list. Each weight is redirected to its matching left/right Humanoid bone when one exists, otherwise it is removed and the remaining weights on that vertex are scaled up. FBX meshes are cloned first; the original FBX is never modified."),
-                            GUILayout.Width(150))) {
-                        FixIssues(new List<Issue>(_issues), $"{_issues.Count} issue(s)");
+                                "Destructive: write corrected weights into a cloned .mesh asset under Assets/AvatarQol Generated/ and rewire the renderer to the clone now. Faster feedback than the component flow but the renderer reference is lost if the FBX subasset is regenerated (Blender re-export). Prefer 'Save fixes as component' when in doubt."),
+                            GUILayout.Height(28), GUILayout.Width(110))) {
+                        FixIssues(new List<DetectedIssue>(_issues), $"{_issues.Count} issue(s)");
+                    }
+                    using (new EditorGUI.DisabledScope(!isPreviewing)) {
+                        if (GUILayout.Button(
+                                new GUIContent("Stop preview", "Destroy the preview clone and un-hide the source avatar."),
+                                GUILayout.Height(28), GUILayout.Width(110))) {
+                            AvatarPreviewController.StopPreview();
+                        }
                     }
                     if (GUILayout.Button(
                             new GUIContent("Clear",
@@ -388,6 +425,22 @@ namespace WhyKnot.AvatarQol.Tools {
                         "Vertex is in the centre stripe; a Left or Right bone exceeded the higher centre threshold.");
                     GUILayout.FlexibleSpace();
                 }
+            }
+
+            // Diagnostic banner for the "scan ran, found nothing, but most
+            // of the geometry was filtered as Center" failure mode -- the
+            // exact situation that bit the user on the Maid Accessories
+            // mesh before the default centerMargin came down. Only fires
+            // after a scan has actually run (_scanSummary populated) so
+            // first-launch doesn't flash a help box at an empty list.
+            if (_issues.Count == 0 && !string.IsNullOrEmpty(_scanSummary)
+                    && _lastScanCenterVerts > 0
+                    && _lastScanCenterVerts > (_lastScanLeftRightVerts + _lastScanCenterVerts) * 8 / 10) {
+                int total = _lastScanLeftRightVerts + _lastScanCenterVerts;
+                int pct = total > 0 ? (_lastScanCenterVerts * 100 / total) : 0;
+                WkStyles.Notice(NoticeKind.Warning,
+                    $"{pct}% of vertices ({_lastScanCenterVerts:N0} of {total:N0}) classified as Center and were filtered. " +
+                    "Lower 'Center margin' in Advanced toward 0, or confirm the avatar is in T-pose during the scan (the bind-pose math assumes near-bind orientation).");
             }
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
@@ -489,7 +542,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
 #endif
-        private void DrawIssueRowCompact(Issue i, int issueIndex) {
+        private void DrawIssueRowCompact(DetectedIssue i, int issueIndex) {
             string boneName = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
             Color tag; string tagText; string tagTooltip;
             switch (i.Category) {
@@ -572,7 +625,7 @@ namespace WhyKnot.AvatarQol.Tools {
                             "Redirect this offending weight to the bone's Humanoid mirror (e.g. RightUpperLeg → LeftUpperLeg). When no mirror is available, zero the weight and renormalise the rest. FBX-imported meshes are cloned to an editable .mesh in Assets/AvatarQol Generated/ before any change."),
                             WkStyles.MiniRowButton, GUILayout.Width(34))) {
                         var name = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
-                        FixIssues(new List<Issue> { i }, $"weight on {name}");
+                        FixIssues(new List<DetectedIssue> { i }, $"weight on {name}");
                     }
                 }
             }
@@ -787,6 +840,8 @@ namespace WhyKnot.AvatarQol.Tools {
             _issues.Clear();
             _nonReadableRenderers.Clear();
             _scanSummary = "";
+            _lastScanLeftRightVerts = 0;
+            _lastScanCenterVerts = 0;
             if (_animator == null || !_animator.isHuman) return;
 
             var sideMap = new HumanoidSideMap(_animator);
@@ -814,14 +869,26 @@ namespace WhyKnot.AvatarQol.Tools {
                 globalLog?.AppendLine($"  filter: limit-to-renderer={PathUtility.GetGameObjectPath(_limitToRenderer.gameObject)}");
             }
 
+            var p = new ScanParameters {
+                WeightFloor = _weightFloor,
+                CenterMargin = _centerMargin,
+                ScanCenterBand = _scanCenterBand,
+                CenterCrossSideFloor = _centerCrossSideFloor,
+            };
+
             foreach (var r in renderers) {
                 if (r == null || r.sharedMesh == null) continue;
                 if (_excludedRenderers.Contains(r)) {
                     globalLog?.AppendLine($"  SKIP renderer (excluded): {PathUtility.GetGameObjectPath(r.gameObject)}");
                     continue;
                 }
-                verticesScanned += ScanRenderer(r, sideMap, globalLog);
+                var detect = WeightCrossSideDetector.Detect(r, sideMap, p, globalLog);
+                verticesScanned += detect.VerticesScanned;
                 renderersScanned++;
+                if (detect.MeshUnreadable) _nonReadableRenderers.Add(r);
+                _issues.AddRange(detect.Issues);
+                _lastScanLeftRightVerts += detect.LeftVerts + detect.RightVerts;
+                _lastScanCenterVerts += detect.CenterVerts;
             }
 
             _issues.Sort((a, b) => {
@@ -841,172 +908,10 @@ namespace WhyKnot.AvatarQol.Tools {
             SceneView.RepaintAll();
         }
 
-        private int ScanRenderer(SkinnedMeshRenderer renderer, HumanoidSideMap sideMap, StringBuilder log) {
-            if (renderer == null || renderer.gameObject == null) return 0;
-            var mesh = renderer.sharedMesh;
-            if (mesh == null) return 0;
-            var bones = renderer.bones;
-            if (bones == null || bones.Length == 0) {
-                log?.AppendLine($"  SKIP renderer (no bones array): {PathUtility.GetGameObjectPath(renderer.gameObject)}");
-                return 0;
-            }
-            if (!mesh.isReadable) {
-                // Surface this in the SCAN summary too so the user notices when
-                // many renderers are silently being skipped. Actionable
-                // remediation lives in the "Enable Read/Write" UX next to the
-                // scan output.
-                log?.AppendLine($"  SKIP renderer (mesh not readable; enable Read/Write in the model importer): {PathUtility.GetGameObjectPath(renderer.gameObject)}");
-                _nonReadableRenderers.Add(renderer);
-                return 0;
-            }
-
-            // Tag every bone the renderer references. Layered:
-            //   1. Humanoid-ancestor side (most reliable).
-            //   2. If Unknown, check the bone's own world position against
-            //      the avatar's center axis — this catches custom prop /
-            //      skirt-rig bones that are spatially on a side but have no
-            //      Humanoid ancestor.
-            var boneSides = new BoneSide[bones.Length];
-            int countLeft = 0, countRight = 0, countCenter = 0, countUnknown = 0, countSpatial = 0;
-            for (int i = 0; i < bones.Length; i++) {
-                if (bones[i] == null) { boneSides[i] = BoneSide.Unknown; countUnknown++; continue; }
-                var humanoidSide = sideMap.GetSide(bones[i]);
-                if (humanoidSide != BoneSide.Unknown) {
-                    boneSides[i] = humanoidSide;
-                } else {
-                    var spatial = sideMap.ClassifyWorldPosition(bones[i].position, _centerMargin);
-                    boneSides[i] = spatial;
-                    if (spatial == BoneSide.Left || spatial == BoneSide.Right) countSpatial++;
-                }
-                switch (boneSides[i]) {
-                    case BoneSide.Left:    countLeft++;    break;
-                    case BoneSide.Right:   countRight++;   break;
-                    case BoneSide.Center:  countCenter++;  break;
-                    case BoneSide.Unknown: countUnknown++; break;
-                }
-            }
-            log?.AppendLine($"  RENDER {PathUtility.GetGameObjectPath(renderer.gameObject)}: " +
-                            $"{bones.Length} bones (L={countLeft} R={countRight} C={countCenter} U={countUnknown}; " +
-                            $"{countSpatial} of those by spatial fallback)");
-            if (countLeft == 0 || countRight == 0) {
-                log?.AppendLine($"    EARLY-EXIT: no cross-side mismatch possible (need both Left and Right bones in the renderer's bones array).");
-                return mesh.vertexCount;
-            }
-
-            var verts = mesh.vertices;
-            var weights = mesh.GetAllBoneWeights();
-            var bonesPerVertex = mesh.GetBonesPerVertex();
-            // bindposes[i] transforms a mesh-local point into bone-i-local
-            // coordinates AT BIND POSE. We use this plus bone.TransformPoint
-            // (current pose, assumed ≈ bind pose) to derive each vertex's
-            // world position correctly regardless of where the renderer's
-            // GameObject sits in the hierarchy.
-            var bindposes = mesh.bindposes;
-            // Defensive: corrupt / re-imported meshes can have mismatched
-            // sub-arrays. Bail rather than walk off the end.
-            if (verts.Length != mesh.vertexCount || bonesPerVertex.Length != mesh.vertexCount) {
-                log?.AppendLine($"    SKIP: vertex/bonesPerVertex length mismatch ({verts.Length}/{bonesPerVertex.Length} vs vertexCount={mesh.vertexCount}).");
-                return 0;
-            }
-            if (bindposes == null || bindposes.Length < bones.Length) {
-                log?.AppendLine($"    WARN: bindposes incomplete ({bindposes?.Length ?? 0} for {bones.Length} bones); falling back to renderer.transform for affected vertices.");
-            }
-
-            int weightCursor = 0;
-            int sLeftVerts = 0, sRightVerts = 0, sCenterVerts = 0;
-            int wSkippedFloor = 0, wSkippedCenter = 0, wSkippedUnknown = 0, wSkippedSameSide = 0;
-            int wFlaggedHumanoid = 0, wFlaggedSpatial = 0, wFlaggedCenterBand = 0;
-
-            for (int v = 0; v < mesh.vertexCount; v++) {
-                int wCount = bonesPerVertex[v];
-
-                // Bind-pose world position via the highest-weight bone.
-                // The vertex's "anchor" bone is whichever bone influences it
-                // most; we transform mesh-local → bone-local (bindpose) →
-                // world (current bone transform). Equivalent to evaluating
-                // the skin at bind pose for a single dominant bone, which
-                // is plenty for side classification.
-                int primaryIdx = -1;
-                float primaryWeight = 0f;
-                for (int w = 0; w < wCount; w++) {
-                    var bw = weights[weightCursor + w];
-                    if (bw.boneIndex < 0 || bw.boneIndex >= bones.Length) continue;
-                    if (bones[bw.boneIndex] == null) continue;
-                    if (bw.weight > primaryWeight) {
-                        primaryWeight = bw.weight;
-                        primaryIdx = bw.boneIndex;
-                    }
-                }
-                Vector3 worldPos;
-                if (primaryIdx >= 0 && bindposes != null && primaryIdx < bindposes.Length) {
-                    var meshLocal = verts[v];
-                    var boneLocal = bindposes[primaryIdx].MultiplyPoint3x4(meshLocal);
-                    worldPos = bones[primaryIdx].TransformPoint(boneLocal);
-                } else {
-                    worldPos = renderer.transform.TransformPoint(verts[v]);
-                }
-
-                var vertexSide = sideMap.ClassifyWorldPosition(worldPos, _centerMargin);
-                if (vertexSide == BoneSide.Left)        sLeftVerts++;
-                else if (vertexSide == BoneSide.Right)  sRightVerts++;
-                else                                     sCenterVerts++;
-
-                bool isCenterVertex = vertexSide == BoneSide.Center;
-                // Skip centre-band vertices entirely unless the user opted
-                // in. They produce noise (legitimate spine/clavicle bleed)
-                // that drowns the real Left/Right cross-side issues.
-                if (isCenterVertex && !_scanCenterBand) {
-                    weightCursor += wCount;
-                    continue;
-                }
-                float vertexFloor = isCenterVertex ? _centerCrossSideFloor : _weightFloor;
-
-                for (int w = 0; w < wCount; w++) {
-                    var bw = weights[weightCursor + w];
-                    if (bw.boneIndex < 0 || bw.boneIndex >= bones.Length) continue;
-                    if (bw.weight < vertexFloor) { wSkippedFloor++; continue; }
-                    var bSide = boneSides[bw.boneIndex];
-                    if (bSide == BoneSide.Unknown) { wSkippedUnknown++; continue; }
-                    if (bSide == BoneSide.Center)  { wSkippedCenter++;  continue; }
-                    // For Left/Right vertices: flag iff bone is the OPPOSITE side.
-                    // For Center vertices: flag iff bone is Left OR Right (any side
-                    // weight on a centerline vertex is suspicious if it survived
-                    // the higher floor).
-                    if (!isCenterVertex && bSide == vertexSide) { wSkippedSameSide++; continue; }
-
-                    var bone = bones[bw.boneIndex];
-                    if (bone == null) continue;
-                    bool spatialClassification = sideMap.GetSide(bone) == BoneSide.Unknown;
-                    IssueCategory category;
-                    if (isCenterVertex) {
-                        category = IssueCategory.CenterBandSideBleed;
-                        wFlaggedCenterBand++;
-                    } else if (spatialClassification) {
-                        category = IssueCategory.SpatialCrossSide;
-                        wFlaggedSpatial++;
-                    } else {
-                        category = IssueCategory.HumanoidCrossSide;
-                        wFlaggedHumanoid++;
-                    }
-                    _issues.Add(new Issue {
-                        Renderer       = renderer,
-                        RendererPath   = PathUtility.GetGameObjectPath(renderer.gameObject),
-                        VertexIndex    = v,
-                        WorldPosition  = worldPos,
-                        VertexSide     = vertexSide,
-                        OffendingBone  = bone,
-                        BoneSide       = bSide,
-                        Weight         = bw.weight,
-                        Category       = category,
-                    });
-                }
-                weightCursor += wCount;
-            }
-            log?.AppendLine($"    verts L={sLeftVerts} R={sRightVerts} C={sCenterVerts}");
-            log?.AppendLine($"    weights skipped: floor={wSkippedFloor} center-bone={wSkippedCenter} unknown-bone={wSkippedUnknown} same-side={wSkippedSameSide}");
-            log?.AppendLine($"    weights flagged: humanoid={wFlaggedHumanoid} spatial={wFlaggedSpatial} center-band={wFlaggedCenterBand}");
-            return mesh.vertexCount;
-        }
+        // ScanRenderer was moved into WeightFixes/WeightCrossSideDetector
+        // (Detect) so the runtime apply hook shares the exact same
+        // detection path used by this window. Scan() above now calls into
+        // the detector once per renderer.
 
         // ------ Debug dump for a single renderer ---------------------------
 
@@ -1142,9 +1047,116 @@ namespace WhyKnot.AvatarQol.Tools {
             SceneView.RepaintAll();
         }
 
+        // ------ Preview on a clone (nondestructive) ----------------------
+
+        private void StartPreview(List<DetectedIssue> issues) {
+            if (_animator == null || issues == null || issues.Count == 0) return;
+            var animator = _animator;
+            // Group by renderer; remap each renderer to the preview clone via
+            // hierarchy path so the in-memory fix lands on the clone instead
+            // of the source.
+            var byRenderer = new Dictionary<SkinnedMeshRenderer, List<DetectedIssue>>();
+            foreach (var i in issues) {
+                if (i == null || i.Renderer == null) continue;
+                if (!byRenderer.TryGetValue(i.Renderer, out var list)) {
+                    list = new List<DetectedIssue>();
+                    byRenderer[i.Renderer] = list;
+                }
+                list.Add(i);
+            }
+            if (byRenderer.Count == 0) return;
+
+            AvatarPreviewController.StartPreview(animator.gameObject, (cloneRoot, session) => {
+                var cloneAnimator = cloneRoot.GetComponentInChildren<Animator>(true);
+                if (cloneAnimator == null) return;
+                foreach (var kv in byRenderer) {
+                    var sourceRenderer = kv.Key;
+                    var cloneRenderer = AvatarPreviewController.MapToPreview(sourceRenderer.transform)?.GetComponent<SkinnedMeshRenderer>();
+                    if (cloneRenderer == null || cloneRenderer.sharedMesh == null) continue;
+                    session.Capture(cloneRenderer);
+                    var clone = UnityEngine.Object.Instantiate(cloneRenderer.sharedMesh);
+                    clone.name = cloneRenderer.sharedMesh.name + " (WeightFix Preview)";
+                    clone.hideFlags = HideFlags.DontSave;
+                    session.Adopt(clone);
+                    var refs = new List<WeightFixer.IssueRef>(kv.Value.Count);
+                    foreach (var issue in kv.Value) {
+                        var cloneBone = AvatarPreviewController.MapToPreview(issue.OffendingBone);
+                        if (cloneBone == null) continue;
+                        refs.Add(new WeightFixer.IssueRef {
+                            Renderer = cloneRenderer,
+                            VertexIndex = issue.VertexIndex,
+                            OffendingBone = cloneBone,
+                            Weight = issue.Weight,
+                        });
+                    }
+                    var fixResult = new WeightFixer.FixResult();
+                    WeightFixer.ApplyFixesToMeshInPlace(clone, cloneRenderer.bones, refs, cloneAnimator, fixResult);
+                    cloneRenderer.sharedMesh = clone;
+                }
+            });
+        }
+
+        // ------ Save as component (nondestructive) ------------------------
+
+        private void SaveIssuesAsComponents() {
+            if (_issues.Count == 0) return;
+
+            // Bucket issues by their renderer so each renderer gets one
+            // component, parameterised once. We don't store the issue list
+            // on the component -- the runtime hook re-scans the renderer's
+            // CURRENT mesh at apply time, which is what makes the flow
+            // robust to Blender re-imports.
+            var renderers = new HashSet<SkinnedMeshRenderer>();
+            foreach (var i in _issues) if (i.Renderer != null) renderers.Add(i.Renderer);
+            if (renderers.Count == 0) {
+                EditorUtility.DisplayDialog("Save fixes as component",
+                    "All issues in the list reference destroyed renderers; nothing to save.", "OK");
+                return;
+            }
+
+            string msg = $"Add (or update) a WhyKnotWeightFixIntent component on " +
+                         $"{renderers.Count} renderer(s)?\n\n" +
+                         "At play-mode entry and at avatar upload, each intent re-scans its " +
+                         "renderer's current mesh and applies cross-side fixes to an in-memory " +
+                         "clone. The source mesh asset is never modified.\n\n" +
+                         "The component stores your current scan parameters (weight floor, " +
+                         "centre margin, scan centre band, centre threshold) so play / build " +
+                         "produces the same set of fixes you see in this list right now.";
+            if (!EditorUtility.DisplayDialog("Save fixes as component", msg,
+                    $"Add to {renderers.Count} renderer(s)", "Cancel")) return;
+
+            int created = 0;
+            int updated = 0;
+            int undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Avatar QoL: Save weight fixes as component");
+            foreach (var renderer in renderers) {
+                if (renderer == null) continue;
+                var existing = renderer.GetComponent<WhyKnotWeightFixIntent>();
+                if (existing == null) {
+                    existing = Undo.AddComponent<WhyKnotWeightFixIntent>(renderer.gameObject);
+                    created++;
+                } else {
+                    Undo.RecordObject(existing, "Update WeightFix intent");
+                    updated++;
+                }
+                existing.targetRenderer       = renderer;
+                existing.weightFloor          = _weightFloor;
+                existing.centerMargin         = _centerMargin;
+                existing.scanCenterBand       = _scanCenterBand;
+                existing.centerCrossSideFloor = _centerCrossSideFloor;
+                EditorUtility.SetDirty(existing);
+            }
+            Undo.CollapseUndoOperations(undoGroup);
+
+            AvatarQolLogger.Instance.Info(
+                $"WeightFix intent saved: {created} created, {updated} updated, " +
+                $"across {renderers.Count} renderer(s). " +
+                $"Fixes will apply at play mode and at upload.");
+        }
+
         // ------ Fix --------------------------------------------------------
 
-        private void FixIssues(List<Issue> issues, string description) {
+        private void FixIssues(List<DetectedIssue> issues, string description) {
             if (issues == null || issues.Count == 0) return;
             // Single confirmation up-front; the apply runs in a single Undo
             // group so Ctrl+Z reverts everything in one step.
@@ -1152,15 +1164,19 @@ namespace WhyKnot.AvatarQol.Tools {
             foreach (var i in issues) if (i.Renderer != null) rendererCount.Add(i.Renderer);
             string msg = $"Fix {description} across {rendererCount.Count} renderer(s)?\n\n" +
                          "Each offending weight will be redirected to its Humanoid mirror bone " +
-                         "(e.g. RightUpperLeg → LeftUpperLeg). Weights with no mirror are zeroed " +
+                         "(e.g. RightUpperLeg -> LeftUpperLeg). Weights with no mirror are zeroed " +
                          "and the remaining weights on the same vertex are scaled up.\n\n" +
                          "FBX-imported meshes will be cloned to editable .mesh assets in " +
-                         $"{WeightFixer.GeneratedFolder}/ — the original FBX is never modified.\n\n" +
+                         $"{WeightFixer.GeneratedFolder}/ - the original FBX is never modified.\n\n" +
+                         "Prefer the nondestructive component flow ('Save fixes as component' " +
+                         "below the issue list) when you expect to re-import the model from " +
+                         "Blender; the destructive path here writes into the clone .mesh and " +
+                         "the reference is lost if the FBX subasset is regenerated.\n\n" +
                          "Ctrl+Z reverts the operation.";
             if (!EditorUtility.DisplayDialog("Fix weight contamination", msg, "Fix", "Cancel")) return;
 
-            // Translate UI Issue → fixer IssueRef (avoids leaking UI types
-            // into the fixer module).
+            // Translate detector Issue -> fixer IssueRef so the fixer
+            // module stays free of detection-side types.
             var refs = new List<WeightFixer.IssueRef>(issues.Count);
             foreach (var i in issues) {
                 refs.Add(new WeightFixer.IssueRef {
@@ -1176,7 +1192,7 @@ namespace WhyKnot.AvatarQol.Tools {
             // the gizmo overlay. We don't auto-rescan: the user usually
             // wants to compare before/after themselves, and Ctrl+Z is more
             // useful when the issue list still shows what was done.
-            var fixedSet = new HashSet<Issue>(issues);
+            var fixedSet = new HashSet<DetectedIssue>(issues);
             _issues.RemoveAll(fixedSet.Contains);
             SceneView.RepaintAll();
 
@@ -1218,26 +1234,9 @@ namespace WhyKnot.AvatarQol.Tools {
             Handles.color = prevColor;
         }
 
-        // ------ Records ----------------------------------------------------
-
-        private enum IssueCategory {
-            HumanoidCrossSide,    // bone has Humanoid ancestor on opposite side
-            SpatialCrossSide,     // bone has no Humanoid ancestor; pivot on opposite side
-            CenterBandSideBleed,  // vertex is in the centre stripe; bone is Left or Right above the higher centre floor
-        }
-
-        private sealed class Issue {
-            public SkinnedMeshRenderer Renderer;
-            // Cached at scan-time so OnGUI doesn't have to re-walk Transforms
-            // (and so a destroyed-after-scan renderer doesn't NRE the header).
-            public string RendererPath;
-            public int VertexIndex;
-            public Vector3 WorldPosition;
-            public BoneSide VertexSide;
-            public Transform OffendingBone;
-            public BoneSide BoneSide;
-            public float Weight;
-            public IssueCategory Category;
-        }
+        // Issue record + IssueCategory enum moved to
+        // WhyKnot.AvatarQol.WeightFixes (DetectedIssue.cs) so the runtime
+        // apply hook can speak the same shape without referencing this
+        // editor window.
     }
 }
