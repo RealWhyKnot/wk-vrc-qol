@@ -5,23 +5,34 @@
 // mesh by closest-point correspondence on the meshes' 3D geometry.
 //
 // Pipeline:
-//   1. UV-rasterize the target mesh in UV space. For every covered
-//      texel store (target triangle index, barycentric weights).
-//   2. Build a uniform spatial grid over the source mesh's triangles
-//      for cheap nearest-triangle queries.
+//   1. UV-rasterize the target mesh. For every output texel store
+//      (target triangle index, barycentric weights).
+//   2. Build a flat uniform spatial grid over the source mesh's
+//      triangles for cheap nearest-triangle queries. The grid stores
+//      a single int[] of triangle indices plus a parallel int[] of
+//      per-cell offsets -- no per-cell List<int> allocation.
 //   3. For each covered target texel, interpolate the target mesh's
-//      vertex positions to get a world-space sample point, query the
-//      grid for the closest source triangle, interpolate the source
-//      UV at the closest point, and sample the source texture.
+//      vertex positions to get a sample point, query the grid for
+//      the closest source triangle (AABB-distance early-out skips
+//      triangles already further than the current best hit), and
+//      bilinear-sample the source texture into the output.
 //
-// Pure math + Unity primitives only (Mesh, Texture2D). All entry
-// points are static and side-effect-free aside from writing the
-// returned Texture2D; the algorithm is exercised directly from the
-// Tests.Editor asmdef. UI, FBX import, and PNG persistence live in
-// sibling files so this stays trivially unit-testable.
+// Performance: the per-texel work in step 3 runs under Parallel.For
+// over output rows; the source texture is pre-read into a Color32[]
+// so the parallel loop never touches a Texture2D method (those would
+// fight the main thread). The implementation uses only .NET base
+// types and Unity primitives -- no Burst, no Collections, no Jobs --
+// because adding those would force every consumer to install the
+// matching packages before the package compiles.
+//
+// Pure-math entry points (ClosestPointOnTriangle, BuildSpatialGrid,
+// QueryClosest, RasterizeTargetUv, ComputeBBoxAlignment,
+// SampleBilinearClamp32) are static and side-effect-free, exercised
+// directly from the Tests.Editor asmdef.
 
 using System;
-using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace WhyKnot.AvatarQol.Tools {
@@ -93,44 +104,52 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         // -----------------------------------------------------------------
-        // Uniform spatial grid over a triangle list. Trades closest-point
-        // queries from O(N triangles) to roughly O(triangles-per-shell),
-        // which is enough to make a 1024^2 bake on a 50k-tri avatar finish
-        // in seconds instead of minutes.
+        // Flat uniform spatial grid over a triangle list.
         //
-        // Construction inserts each triangle into every grid cell its AABB
-        // overlaps. Query expands shells around the source cell until the
-        // nearest hit found is closer than the inner radius of the next
-        // shell, at which point no further shell can beat it.
+        // Layout:
+        //   cellOffsets   : length = dim^3 + 1
+        //   cellTriangles : length = sum of triangles-per-cell counts
+        //   Cell i owns the slice cellTriangles[cellOffsets[i] .. cellOffsets[i+1]).
+        //
+        // Construction is two-pass with a prefix sum: count per cell,
+        // then fill via running cursors. No List<int> indirection and no
+        // per-cell allocation.
+        //
+        // Closest-point query expands shells from the query's home cell.
+        // Stops once `radius * minCellExtent >= sqrt(bestDistSq)` -- the
+        // minimum possible distance from the query to any cell in shell
+        // (radius+1) or beyond, which can't beat the current best hit.
         // -----------------------------------------------------------------
 
         internal sealed class SpatialGrid {
             public int dim;
             public Vector3 origin;
             public Vector3 cellSize;
-            // cells[z * dim * dim + y * dim + x]; null entries are empty.
-            public List<int>[] cells;
-            public float minCellExtent; // smallest of cellSize.x/y/z, for early-out math.
+            public int[] cellOffsets;     // length dim^3 + 1
+            public int[] cellTriangles;   // flat slice store
+            public float minCellExtent;
         }
 
         internal static SpatialGrid BuildSpatialGrid(Vector3[] verts, int[] triangles, int dim) {
+            dim = Mathf.Max(1, dim);
+            int cellCount = dim * dim * dim;
+
             if (verts == null || verts.Length == 0 || triangles == null || triangles.Length < 3) {
                 return new SpatialGrid {
-                    dim = Mathf.Max(1, dim),
-                    origin = Vector3.zero,
-                    cellSize = Vector3.one,
-                    cells = new List<int>[Mathf.Max(1, dim * dim * dim)],
-                    minCellExtent = 1f,
+                    dim            = dim,
+                    origin         = Vector3.zero,
+                    cellSize       = Vector3.one,
+                    cellOffsets    = new int[cellCount + 1],
+                    cellTriangles  = Array.Empty<int>(),
+                    minCellExtent  = 1f,
                 };
             }
-            dim = Mathf.Max(1, dim);
+
             Vector3 min = verts[0]; Vector3 max = verts[0];
             for (int i = 1; i < verts.Length; i++) {
                 min = Vector3.Min(min, verts[i]);
                 max = Vector3.Max(max, verts[i]);
             }
-            // Inflate slightly so a triangle whose AABB touches a cell
-            // boundary lands cleanly inside a cell.
             Vector3 size = max - min;
             Vector3 pad = new Vector3(
                 Mathf.Max(size.x, 1e-4f) * 0.001f + 1e-4f,
@@ -138,20 +157,14 @@ namespace WhyKnot.AvatarQol.Tools {
                 Mathf.Max(size.z, 1e-4f) * 0.001f + 1e-4f);
             min -= pad; max += pad;
             Vector3 cell = (max - min) / dim;
-            // Floor the cell size so dim=1 still works on a near-flat mesh.
             cell.x = Mathf.Max(cell.x, 1e-6f);
             cell.y = Mathf.Max(cell.y, 1e-6f);
             cell.z = Mathf.Max(cell.z, 1e-6f);
 
-            var grid = new SpatialGrid {
-                dim = dim,
-                origin = min,
-                cellSize = cell,
-                cells = new List<int>[dim * dim * dim],
-                minCellExtent = Mathf.Min(cell.x, Mathf.Min(cell.y, cell.z)),
-            };
-
             int triCount = triangles.Length / 3;
+            var counts = new int[cellCount];
+
+            // First pass: count triangles per cell.
             for (int t = 0; t < triCount; t++) {
                 int i0 = triangles[t * 3];
                 int i1 = triangles[t * 3 + 1];
@@ -168,15 +181,58 @@ namespace WhyKnot.AvatarQol.Tools {
                 int z1 = Mathf.Clamp(Mathf.FloorToInt((tMax.z - min.z) / cell.z), 0, dim - 1);
                 for (int z = z0; z <= z1; z++) {
                     for (int y = y0; y <= y1; y++) {
+                        int rowBase = (z * dim + y) * dim;
+                        for (int x = x0; x <= x1; x++) counts[rowBase + x]++;
+                    }
+                }
+            }
+
+            // Prefix sum into offsets.
+            var offsets = new int[cellCount + 1];
+            int sum = 0;
+            for (int i = 0; i < cellCount; i++) {
+                offsets[i] = sum;
+                sum += counts[i];
+            }
+            offsets[cellCount] = sum;
+
+            // Second pass: fill the flat triangle store, using counts as a
+            // running cursor over each cell's slice.
+            var cellTriangles = new int[sum];
+            Array.Clear(counts, 0, cellCount);
+            for (int t = 0; t < triCount; t++) {
+                int i0 = triangles[t * 3];
+                int i1 = triangles[t * 3 + 1];
+                int i2 = triangles[t * 3 + 2];
+                if (i0 >= verts.Length || i1 >= verts.Length || i2 >= verts.Length) continue;
+                Vector3 a = verts[i0]; Vector3 b = verts[i1]; Vector3 c = verts[i2];
+                Vector3 tMin = Vector3.Min(Vector3.Min(a, b), c);
+                Vector3 tMax = Vector3.Max(Vector3.Max(a, b), c);
+                int x0 = Mathf.Clamp(Mathf.FloorToInt((tMin.x - min.x) / cell.x), 0, dim - 1);
+                int y0 = Mathf.Clamp(Mathf.FloorToInt((tMin.y - min.y) / cell.y), 0, dim - 1);
+                int z0 = Mathf.Clamp(Mathf.FloorToInt((tMin.z - min.z) / cell.z), 0, dim - 1);
+                int x1 = Mathf.Clamp(Mathf.FloorToInt((tMax.x - min.x) / cell.x), 0, dim - 1);
+                int y1 = Mathf.Clamp(Mathf.FloorToInt((tMax.y - min.y) / cell.y), 0, dim - 1);
+                int z1 = Mathf.Clamp(Mathf.FloorToInt((tMax.z - min.z) / cell.z), 0, dim - 1);
+                for (int z = z0; z <= z1; z++) {
+                    for (int y = y0; y <= y1; y++) {
+                        int rowBase = (z * dim + y) * dim;
                         for (int x = x0; x <= x1; x++) {
-                            int idx = (z * dim + y) * dim + x;
-                            var list = grid.cells[idx] ?? (grid.cells[idx] = new List<int>(2));
-                            list.Add(t);
+                            int idx = rowBase + x;
+                            cellTriangles[offsets[idx] + counts[idx]++] = t;
                         }
                     }
                 }
             }
-            return grid;
+
+            return new SpatialGrid {
+                dim            = dim,
+                origin         = min,
+                cellSize       = cell,
+                cellOffsets    = offsets,
+                cellTriangles  = cellTriangles,
+                minCellExtent  = Mathf.Min(cell.x, Mathf.Min(cell.y, cell.z)),
+            };
         }
 
         internal struct ClosestHit {
@@ -189,45 +245,64 @@ namespace WhyKnot.AvatarQol.Tools {
         internal static ClosestHit QueryClosest(
                 SpatialGrid grid, Vector3[] verts, int[] triangles, Vector3 query) {
             var hit = new ClosestHit { triangleIndex = -1, distance = float.PositiveInfinity };
-            if (grid == null || grid.cells == null || grid.cells.Length == 0) return hit;
+            if (grid == null || grid.cellTriangles == null || grid.cellTriangles.Length == 0) return hit;
 
-            int qx = Mathf.Clamp(Mathf.FloorToInt((query.x - grid.origin.x) / grid.cellSize.x), 0, grid.dim - 1);
-            int qy = Mathf.Clamp(Mathf.FloorToInt((query.y - grid.origin.y) / grid.cellSize.y), 0, grid.dim - 1);
-            int qz = Mathf.Clamp(Mathf.FloorToInt((query.z - grid.origin.z) / grid.cellSize.z), 0, grid.dim - 1);
+            int dim = grid.dim;
+            int qx = Mathf.Clamp(Mathf.FloorToInt((query.x - grid.origin.x) / grid.cellSize.x), 0, dim - 1);
+            int qy = Mathf.Clamp(Mathf.FloorToInt((query.y - grid.origin.y) / grid.cellSize.y), 0, dim - 1);
+            int qz = Mathf.Clamp(Mathf.FloorToInt((query.z - grid.origin.z) / grid.cellSize.z), 0, dim - 1);
 
-            int radius = 0;
-            int maxRadius = grid.dim;
             float bestDistSq = float.PositiveInfinity;
+            int radius = 0;
+            int maxRadius = dim;
             while (radius <= maxRadius) {
                 int x0 = Mathf.Max(0, qx - radius);
                 int y0 = Mathf.Max(0, qy - radius);
                 int z0 = Mathf.Max(0, qz - radius);
-                int x1 = Mathf.Min(grid.dim - 1, qx + radius);
-                int y1 = Mathf.Min(grid.dim - 1, qy + radius);
-                int z1 = Mathf.Min(grid.dim - 1, qz + radius);
+                int x1 = Mathf.Min(dim - 1, qx + radius);
+                int y1 = Mathf.Min(dim - 1, qy + radius);
+                int z1 = Mathf.Min(dim - 1, qz + radius);
 
                 for (int z = z0; z <= z1; z++) {
                     for (int y = y0; y <= y1; y++) {
+                        int rowBase = (z * dim + y) * dim;
                         for (int x = x0; x <= x1; x++) {
-                            // Skip interior cells on shell expansion -- we
-                            // visited them on smaller radii.
                             if (radius > 0
                                     && x > qx - radius && x < qx + radius
                                     && y > qy - radius && y < qy + radius
                                     && z > qz - radius && z < qz + radius) {
                                 continue;
                             }
-                            int idx = (z * grid.dim + y) * grid.dim + x;
-                            var list = grid.cells[idx];
-                            if (list == null) continue;
-                            for (int li = 0; li < list.Count; li++) {
-                                int t = list[li];
+                            int idx = rowBase + x;
+                            int start = grid.cellOffsets[idx];
+                            int end   = grid.cellOffsets[idx + 1];
+                            for (int j = start; j < end; j++) {
+                                int t = grid.cellTriangles[j];
                                 int i0 = triangles[t * 3];
                                 int i1 = triangles[t * 3 + 1];
                                 int i2 = triangles[t * 3 + 2];
+                                Vector3 a = verts[i0];
+                                Vector3 b = verts[i1];
+                                Vector3 c = verts[i2];
+
+                                // Per-triangle AABB early-out. Cheaper
+                                // than the full Ericson test when the
+                                // triangle is already further than what
+                                // we've found.
+                                float ax = a.x < b.x ? a.x : b.x; if (c.x < ax) ax = c.x;
+                                float bx = a.x > b.x ? a.x : b.x; if (c.x > bx) bx = c.x;
+                                float ay = a.y < b.y ? a.y : b.y; if (c.y < ay) ay = c.y;
+                                float by = a.y > b.y ? a.y : b.y; if (c.y > by) by = c.y;
+                                float az = a.z < b.z ? a.z : b.z; if (c.z < az) az = c.z;
+                                float bz = a.z > b.z ? a.z : b.z; if (c.z > bz) bz = c.z;
+                                float dxAabb = query.x < ax ? ax - query.x : (query.x > bx ? query.x - bx : 0f);
+                                float dyAabb = query.y < ay ? ay - query.y : (query.y > by ? query.y - by : 0f);
+                                float dzAabb = query.z < az ? az - query.z : (query.z > bz ? query.z - bz : 0f);
+                                float aabbDistSq = dxAabb * dxAabb + dyAabb * dyAabb + dzAabb * dzAabb;
+                                if (aabbDistSq > bestDistSq) continue;
+
                                 Vector3 cp = ClosestPointOnTriangle(
-                                    query, verts[i0], verts[i1], verts[i2],
-                                    out float w0, out float w1, out float w2);
+                                    query, a, b, c, out float w0, out float w1, out float w2);
                                 float dSq = (query - cp).sqrMagnitude;
                                 if (dSq < bestDistSq) {
                                     bestDistSq = dSq;
@@ -240,12 +315,14 @@ namespace WhyKnot.AvatarQol.Tools {
                     }
                 }
 
-                // Early-out: once any hit has been found, the next shell
-                // can only beat it if (radius+1) * minCellExtent <
-                // sqrt(bestDistSq). Stop when that's no longer possible.
+                // Once any hit is found, the next shell's nearest cell
+                // sits at least `radius * minCellExtent` away from the
+                // query (a worst-case-corner argument on the query's
+                // home cell). If that exceeds the current best
+                // distance, no further shell can beat us.
                 if (hit.triangleIndex >= 0) {
-                    float shellNext = (radius + 1) * grid.minCellExtent;
-                    if (shellNext * shellNext > bestDistSq) break;
+                    float shellMin = radius * grid.minCellExtent;
+                    if (shellMin * shellMin >= bestDistSq) break;
                 }
                 radius++;
             }
@@ -256,14 +333,6 @@ namespace WhyKnot.AvatarQol.Tools {
 
         // -----------------------------------------------------------------
         // Target UV rasterizer.
-        //
-        // Walks every target triangle, finds its UV-space AABB, and for
-        // each output texel inside that AABB tests UV-barycentric to fill
-        // it. First-write-wins: when two target triangles share a UV cell
-        // (mirrored islands, atlas overlap) the first one to touch the
-        // texel keeps it. Texels outside [0,1] are dropped because the
-        // output texture's wrap is Clamp; nothing outside [0,1] can be
-        // sampled anyway.
         // -----------------------------------------------------------------
 
         internal struct UvSample {
@@ -296,9 +365,6 @@ namespace WhyKnot.AvatarQol.Tools {
                 int yMin = Mathf.Max(0, Mathf.FloorToInt(minV * res));
                 int yMax = Mathf.Min(resolution - 1, Mathf.CeilToInt(maxV * res));
 
-                // Pre-compute UV-barycentric basis: maintain v0, v1, d00,
-                // d01, d11, invDenom outside the inner loop. Avoids 3 dot
-                // products per texel.
                 Vector2 v0 = b - a;
                 Vector2 v1 = c - a;
                 float d00 = Vector2.Dot(v0, v0);
@@ -332,34 +398,89 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         // -----------------------------------------------------------------
+        // Thread-safe bilinear texture sampling.
+        //
+        // Texture2D.GetPixelBilinear isn't safe to call from worker
+        // threads inside a Parallel.For. We GetPixels32 once on the
+        // main thread, then sample manually from that buffer. The
+        // result matches Unity's wrap=Clamp + filter=Bilinear behaviour
+        // for in-range UVs and clamps to the nearest edge texel for
+        // UVs outside [0,1].
+        // -----------------------------------------------------------------
+
+        internal static Color32 SampleBilinearClamp32(Color32[] pixels, int w, int h, float u, float v) {
+            // Unity's Texture2D.GetPixelBilinear treats UV (0,0) as the
+            // centre of pixel (0,0) and UV (1,1) as the centre of pixel
+            // (w-1, h-1) -- texel position = uv * size, no -0.5 offset.
+            // Differs from the OpenGL/DirectX hardware convention; verified
+            // empirically against tex.GetPixelBilinear in the test suite.
+            if (u < 0f) u = 0f; else if (u > 1f) u = 1f;
+            if (v < 0f) v = 0f; else if (v > 1f) v = 1f;
+            float fx = u * w;
+            float fy = v * h;
+            int x0 = (int)Math.Floor(fx);
+            int y0 = (int)Math.Floor(fy);
+            if (x0 >= w) x0 = w - 1;
+            if (y0 >= h) y0 = h - 1;
+            if (x0 < 0) x0 = 0;
+            if (y0 < 0) y0 = 0;
+            float tx = fx - x0;
+            float ty = fy - y0;
+            if (tx < 0f) tx = 0f; else if (tx > 1f) tx = 1f;
+            if (ty < 0f) ty = 0f; else if (ty > 1f) ty = 1f;
+            int x1 = x0 + 1; if (x1 >= w) x1 = w - 1;
+            int y1 = y0 + 1; if (y1 >= h) y1 = h - 1;
+
+            Color32 c00 = pixels[y0 * w + x0];
+            Color32 c10 = pixels[y0 * w + x1];
+            Color32 c01 = pixels[y1 * w + x0];
+            Color32 c11 = pixels[y1 * w + x1];
+
+            float w00 = (1f - tx) * (1f - ty);
+            float w10 = tx * (1f - ty);
+            float w01 = (1f - tx) * ty;
+            float w11 = tx * ty;
+            float r = c00.r * w00 + c10.r * w10 + c01.r * w01 + c11.r * w11;
+            float g = c00.g * w00 + c10.g * w10 + c01.g * w01 + c11.g * w11;
+            float b = c00.b * w00 + c10.b * w10 + c01.b * w01 + c11.b * w11;
+            float a = c00.a * w00 + c10.a * w10 + c01.a * w01 + c11.a * w11;
+            return new Color32((byte)(r + 0.5f), (byte)(g + 0.5f), (byte)(b + 0.5f), (byte)(a + 0.5f));
+        }
+
+        internal static Color32 ColorToColor32(Color c) {
+            return new Color32(
+                (byte)(Mathf.Clamp01(c.r) * 255f + 0.5f),
+                (byte)(Mathf.Clamp01(c.g) * 255f + 0.5f),
+                (byte)(Mathf.Clamp01(c.b) * 255f + 0.5f),
+                (byte)(Mathf.Clamp01(c.a) * 255f + 0.5f));
+        }
+
+        // -----------------------------------------------------------------
         // High-level Transfer.
         // -----------------------------------------------------------------
 
         internal enum AlignmentMode {
-            // Source and target are already in the same coordinate frame.
-            // Right when both come from scene transforms or both meshes
-            // sit at their author origin and have the same proportions.
             Identity,
-            // Translate + uniform-scale the source so its mesh.bounds maps
-            // onto target.bounds. Good default for "two avatars of
-            // different size".
             BoundingBox,
         }
 
         internal struct TransferOptions {
             public Mesh sourceMesh;
-            public int sourceSubmesh;        // -1 = every submesh
+            public int sourceSubmesh;
             public Texture2D sourceTexture;
             public Mesh targetMesh;
-            public int targetSubmesh;        // -1 = every submesh
-            public int outputResolution;     // e.g. 1024
+            public int targetSubmesh;
+            public int outputResolution;
             public AlignmentMode alignment;
-            public Matrix4x4 sourceWorldMatrix;  // used by Identity (and as base for BoundingBox).
+            public Matrix4x4 sourceWorldMatrix;
             public Matrix4x4 targetWorldMatrix;
-            public float maxDistance;        // 0 = no cap; >0 = skip target texels whose nearest source point is further.
-            public int gridDim;              // 0 -> auto-pick from triangle count.
-            public Color fallbackColor;      // pixels with no source correspondence (or > maxDistance) get this.
-            public Action<float> onProgress; // optional, 0..1.
+            public float maxDistance;
+            public int gridDim;
+            public Color fallbackColor;
+            // Coarse phase progress: 0.0 setup, ~0.2 after rasterize,
+            // ~0.95 after parallel transfer, 1.0 done. Called only from
+            // the main thread, not the worker threads.
+            public Action<float> onProgress;
         }
 
         internal struct TransferResult {
@@ -375,8 +496,15 @@ namespace WhyKnot.AvatarQol.Tools {
             if (opt.sourceMesh == null) throw new ArgumentNullException(nameof(opt.sourceMesh));
             if (opt.targetMesh == null) throw new ArgumentNullException(nameof(opt.targetMesh));
             if (opt.sourceTexture == null) throw new ArgumentNullException(nameof(opt.sourceTexture));
+            if (!opt.sourceTexture.isReadable) {
+                throw new InvalidOperationException(
+                    "Source texture is not Read/Write Enabled in the importer; the bake can't sample " +
+                    "it from CPU. Open the source texture asset and enable Read/Write in the importer.");
+            }
 
             int res = opt.outputResolution;
+            opt.onProgress?.Invoke(0f);
+
             var (sourceToCommon, targetToCommon) = ComputeAlignment(
                 opt.alignment, opt.sourceMesh, opt.targetMesh,
                 opt.sourceWorldMatrix, opt.targetWorldMatrix);
@@ -394,6 +522,70 @@ namespace WhyKnot.AvatarQol.Tools {
             var grid = BuildSpatialGrid(sourceVerts, sourceTris, gridDim);
 
             var samples = RasterizeTargetUv(targetUvs, targetTris, res);
+            opt.onProgress?.Invoke(0.2f);
+
+            // Cache source pixels for thread-safe bilinear sampling. The
+            // isReadable check above means GetPixels32 will succeed.
+            Color32[] srcPixels = opt.sourceTexture.GetPixels32();
+            int srcW = opt.sourceTexture.width;
+            int srcH = opt.sourceTexture.height;
+
+            var outputPixels = new Color32[res * res];
+            Color32 fallback32 = ColorToColor32(opt.fallbackColor);
+            for (int i = 0; i < outputPixels.Length; i++) outputPixels[i] = fallback32;
+
+            int coveredCounter = 0;
+            int rejectedCounter = 0;
+            float maxDistObserved = 0f;
+            object statsLock = new object();
+
+            // Parallel core. Each row writes a disjoint stripe of the
+            // output buffer and reads only the immutable inputs, so we
+            // need no per-pixel synchronisation. Per-row stats merge
+            // through a single lock once per row.
+            Parallel.For(0, res, row => {
+                int localCovered = 0;
+                int localRejected = 0;
+                float localMaxDist = 0f;
+                int rowBase = row * res;
+                for (int x = 0; x < res; x++) {
+                    int idx = rowBase + x;
+                    var sample = samples[idx];
+                    if (sample.triangleIndex < 0) continue;
+                    int t = sample.triangleIndex;
+                    int ti0 = targetTris[t * 3];
+                    int ti1 = targetTris[t * 3 + 1];
+                    int ti2 = targetTris[t * 3 + 2];
+                    Vector3 tp = targetVerts[ti0] * sample.wa
+                               + targetVerts[ti1] * sample.wb
+                               + targetVerts[ti2] * sample.wc;
+
+                    var hit = QueryClosest(grid, sourceVerts, sourceTris, tp);
+                    if (hit.triangleIndex < 0) continue;
+                    if (hit.distance > localMaxDist) localMaxDist = hit.distance;
+                    if (opt.maxDistance > 0f && hit.distance > opt.maxDistance) {
+                        localRejected++;
+                        continue;
+                    }
+                    int si0 = sourceTris[hit.triangleIndex * 3];
+                    int si1 = sourceTris[hit.triangleIndex * 3 + 1];
+                    int si2 = sourceTris[hit.triangleIndex * 3 + 2];
+                    Vector2 srcUv = sourceUvs[si0] * hit.wa
+                                  + sourceUvs[si1] * hit.wb
+                                  + sourceUvs[si2] * hit.wc;
+                    outputPixels[idx] = SampleBilinearClamp32(srcPixels, srcW, srcH, srcUv.x, srcUv.y);
+                    localCovered++;
+                }
+                if (localCovered > 0 || localRejected > 0 || localMaxDist > 0f) {
+                    lock (statsLock) {
+                        coveredCounter += localCovered;
+                        rejectedCounter += localRejected;
+                        if (localMaxDist > maxDistObserved) maxDistObserved = localMaxDist;
+                    }
+                }
+            });
+
+            opt.onProgress?.Invoke(0.95f);
 
             var output = new Texture2D(res, res, TextureFormat.RGBA32, mipChain: false, linear: true) {
                 hideFlags  = HideFlags.HideAndDontSave,
@@ -401,56 +593,16 @@ namespace WhyKnot.AvatarQol.Tools {
                 wrapMode   = TextureWrapMode.Clamp,
                 name       = "WkUvTextureTransfer_Output",
             };
-            var pixels = new Color[res * res];
-            Color fallback = opt.fallbackColor;
-            for (int i = 0; i < pixels.Length; i++) pixels[i] = fallback;
-
-            int covered = 0;
-            int rejected = 0;
-            float maxDist = 0f;
-            int total = samples.Length;
-            int progressTick = Mathf.Max(1, total / 100);
-
-            for (int i = 0; i < total; i++) {
-                if (samples[i].triangleIndex < 0) continue;
-                int t = samples[i].triangleIndex;
-                int i0 = targetTris[t * 3];
-                int i1 = targetTris[t * 3 + 1];
-                int i2 = targetTris[t * 3 + 2];
-                Vector3 tp = targetVerts[i0] * samples[i].wa
-                           + targetVerts[i1] * samples[i].wb
-                           + targetVerts[i2] * samples[i].wc;
-
-                var hit = QueryClosest(grid, sourceVerts, sourceTris, tp);
-                if (hit.triangleIndex < 0) continue;
-                if (hit.distance > maxDist) maxDist = hit.distance;
-                if (opt.maxDistance > 0f && hit.distance > opt.maxDistance) {
-                    rejected++;
-                    continue;
-                }
-                int s0 = sourceTris[hit.triangleIndex * 3];
-                int s1 = sourceTris[hit.triangleIndex * 3 + 1];
-                int s2 = sourceTris[hit.triangleIndex * 3 + 2];
-                Vector2 srcUv = sourceUvs[s0] * hit.wa
-                              + sourceUvs[s1] * hit.wb
-                              + sourceUvs[s2] * hit.wc;
-                pixels[i] = opt.sourceTexture.GetPixelBilinear(srcUv.x, srcUv.y);
-                covered++;
-                if (opt.onProgress != null && (i % progressTick) == 0) {
-                    opt.onProgress((float)i / total);
-                }
-            }
-
-            output.SetPixels(pixels);
+            output.SetPixels32(outputPixels);
             output.Apply(updateMipmaps: false, makeNoLongerReadable: false);
-            if (opt.onProgress != null) opt.onProgress(1f);
+            opt.onProgress?.Invoke(1f);
 
             return new TransferResult {
                 output              = output,
-                coveredTexels       = covered,
-                totalTexels         = total,
-                rejectedByDistance  = rejected,
-                maxObservedDistance = maxDist,
+                coveredTexels       = coveredCounter,
+                totalTexels         = samples.Length,
+                rejectedByDistance  = rejectedCounter,
+                maxObservedDistance = maxDistObserved,
             };
         }
 
@@ -462,19 +614,12 @@ namespace WhyKnot.AvatarQol.Tools {
                 AlignmentMode mode, Mesh source, Mesh target,
                 Matrix4x4 sourceWorld, Matrix4x4 targetWorld) {
             switch (mode) {
-                case AlignmentMode.Identity:
-                    return (sourceWorld, targetWorld);
-                case AlignmentMode.BoundingBox:
-                    return ComputeBBoxAlignment(source, target, sourceWorld, targetWorld);
-                default:
-                    return (sourceWorld, targetWorld);
+                case AlignmentMode.Identity:    return (sourceWorld, targetWorld);
+                case AlignmentMode.BoundingBox: return ComputeBBoxAlignment(source, target, sourceWorld, targetWorld);
+                default:                        return (sourceWorld, targetWorld);
             }
         }
 
-        // Map source.bounds onto target.bounds with a uniform scale (avoid
-        // axis-independent stretching, which would distort a humanoid). The
-        // chosen scale uses the largest axis ratio so the source covers
-        // the target even when one axis happens to be smaller.
         internal static (Matrix4x4 source, Matrix4x4 target) ComputeBBoxAlignment(
                 Mesh source, Mesh target,
                 Matrix4x4 sourceWorld, Matrix4x4 targetWorld) {
@@ -485,15 +630,10 @@ namespace WhyKnot.AvatarQol.Tools {
             float sMax = Mathf.Max(sSize.x, Mathf.Max(sSize.y, sSize.z));
             float tMax = Mathf.Max(tSize.x, Mathf.Max(tSize.y, tSize.z));
             float scale = (sMax > 1e-6f) ? (tMax / sMax) : 1f;
-            // T_target_center * S * T_-source_center maps source local
-            // points so that source.bounds.center ends up on
-            // target.bounds.center with a uniform scale.
             Matrix4x4 align =
                 Matrix4x4.Translate(tb.center) *
                 Matrix4x4.Scale(new Vector3(scale, scale, scale)) *
                 Matrix4x4.Translate(-sb.center);
-            // We're operating in the target's local space, so target stays
-            // identity and the source carries the alignment.
             return (align, Matrix4x4.identity);
         }
 
