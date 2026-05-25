@@ -32,6 +32,7 @@ The most recent release is at the top.
 ### Fixed
 - `PhysBoneReinitHook.cs` no longer passes a Unity `Component` as the second argument to `AvatarQolLogger.Instance.Warning(...)`. Side effect of the 1.1.0-beta.3 mass migration from `Debug.LogWarning(msg, contextObject)` -- the regex stripped the `Debug.LogWarning(` prefix but left the trailing context argument behind, which clashed with `WkLogger.Warning`'s `[CallerMemberName] string member = ""` parameter and failed CS1503. The context object reference is dropped; the offending component's `name` is already interpolated into the message.
 - **logger:** Qualify PackageInfo to avoid ambiguity with UnityEditor.PackageInfo (fead5a3)
+- **deps:** Declare com.vrchat.base directly to stop VCC base downgrade (1.1.1) (7edb61b)
 
 ---
 
