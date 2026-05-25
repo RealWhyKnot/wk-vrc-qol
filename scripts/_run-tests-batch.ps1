@@ -41,12 +41,15 @@ $exit = $LASTEXITCODE
 Write-Host "unity exit code: $exit"
 
 # Unity 2022.3 batch mode sometimes returns before the OS finishes
-# flushing the NUnit results XML to disk -- a Test-Path check in the
-# next line then reports "no file" even though the file appears moments
-# later. Poll up to a minute so the script reports the real outcome
-# even when the flush is unusually slow on a busy machine.
+# flushing the NUnit results XML to disk. The file shows up empty
+# first, then gets its content a moment later. Poll for "exists AND
+# has content" so the parse below sees real data.
 $waited = 0
-while (-not (Test-Path $results) -and $waited -lt 240) {
+while ($waited -lt 240) {
+    if (Test-Path $results) {
+        $info = Get-Item $results -ErrorAction SilentlyContinue
+        if ($info -and $info.Length -gt 0) { break }
+    }
     Start-Sleep -Milliseconds 250
     $waited++
 }
