@@ -10,6 +10,7 @@
 // WhyKnot/Avatar QoL Project Settings page.
 
 using UnityEditor;
+using WhyKnot.AvatarQol.Internal.HotReload;
 using WhyKnot.AvatarQol.Internal.Logging;
 using WhyKnot.AvatarQol.Internal.Settings;
 
@@ -19,6 +20,9 @@ namespace WhyKnot.AvatarQol {
 
         [MenuItem("Window/WhyKnot/Avatar QoL/Logs")]
         public static void OpenLogViewer() => WkLogViewerWindow.Open();
+
+        [MenuItem("Window/WhyKnot/Avatar QoL/Hot Reload Status")]
+        public static void OpenHotReloadStatus() => WkHotReloadStatus.Open();
 
         [SettingsProvider]
         public static SettingsProvider CreateSettings() => WkSettingsProvider.Build("WhyKnot/Avatar QoL");
