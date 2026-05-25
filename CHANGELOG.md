@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file. Format foll
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v1.1.1](https://github.com/RealWhyKnot/vrc-avatar-qol/releases/tag/v1.1.1) -- 2026-05-25
+
 ### Added
 - **logging:** Every diagnostic line in this package now routes through `AvatarQolLogger.Instance` (the package's registered `WkLogger`). Sessions are written to `%LocalAppData%/WhyKnot/Logs/dev.whyknot.avatar-qol/session-<timestamp>.log`, capped at 3 retained sessions per package. Each line carries a level tag, source file:line, calling method, and message. Info, Warning, and Error mirror to the Unity Console as before; Debug stays file-only. The session file is project-independent so a bug report can point at the same path regardless of which Unity project surfaced it. Multi-line StringBuilder dumps from `WeightSanityCheckWindow` (Inspect Vertex, Weight Dump, verbose scan log) and `PhysBoneClippingRiskWindow` (verbose scan log) now go through the logger too.
 - **theming:** Tool window OnGUI / OnInspectorGUI bodies open `using (WkStyles.Scope(WkTheme.WhyKnot))` so the IMGUI palette emits the WhyKnot brand colors (black / gray / light blue). Covers Weight Sanity Check, PhysBone Preset, PhysBone Clipping Risks, Bone Merger, Mesh Fix window, and the AutoTightenToBody / MeshFixController inspector editors.
@@ -30,7 +36,6 @@ All notable changes to this project will be documented in this file. Format foll
 ### Fixed
 - `PhysBoneReinitHook.cs` no longer passes a Unity `Component` as the second argument to `AvatarQolLogger.Instance.Warning(...)`. Side effect of the 1.1.0-beta.3 mass migration from `Debug.LogWarning(msg, contextObject)` -- the regex stripped the `Debug.LogWarning(` prefix but left the trailing context argument behind, which clashed with `WkLogger.Warning`'s `[CallerMemberName] string member = ""` parameter and failed CS1503. The context object reference is dropped; the offending component's `name` is already interpolated into the message.
 - **logger:** Qualify PackageInfo to avoid ambiguity with UnityEditor.PackageInfo (fead5a3)
-- **deps:** Declare com.vrchat.base directly to stop VCC base downgrade (1.1.1) (7edb61b)
 
 ### Removed
 - Auto Mesh Fixes pipeline (`AutoTightenToBody`, `WhyKnotMeshFixController`, the Mesh Fix window, both build hooks, the garment-tighten and body-hide operations). The garment-tighten output never produced a usable result in practice. Scenes that still hold an `AutoTightenToBody` component will log a missing-script warning on next open -- remove the stub component to clear it.
