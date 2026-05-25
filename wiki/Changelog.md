@@ -16,6 +16,7 @@ The most recent release is at the top.
 - **theming:** Tool window OnGUI / OnInspectorGUI bodies open `using (WkStyles.Scope(WkTheme.WhyKnot))` so the IMGUI palette emits the WhyKnot brand colors (black / gray / light blue). Covers Weight Sanity Check, PhysBone Preset, PhysBone Clipping Risks, Bone Merger, Mesh Fix window, and the AutoTightenToBody / MeshFixController inspector editors.
 - Loom M1, intent-component split, Mask Painter (1.1.0-beta.5) (556c170)
 - **loom+ci:** Defer Loom, autoload logger version (1.1.0-beta.6) (97903d2)
+- Bundle wk-core, drop dev.whyknot.core dep, remove Loom (1.2.0) (e78ffe0)
 
 ### Changed
 - **deps:** Bumped `dev.whyknot.core` dependency to `>=1.1.0` so the new theming system and `WkLogger` are guaranteed available.
