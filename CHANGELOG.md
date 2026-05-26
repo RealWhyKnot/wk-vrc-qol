@@ -9,7 +9,18 @@ All notable changes to this project will be documented in this file. Format foll
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Added
+- **uv-transfer:** Mesh-to-mesh texture rebake tool (3739848)
+- **mask-painter:** UV map preview pane plus raycast snapshot fixes (cf1bbb6)
+
+### Changed
+- **uv-transfer:** Parallel core + flat spatial grid + AABB early-out (c30e34b)
+
+### Fixed
+- **mask-painter:** Brush no longer stamps camera-visible UV region (e22cd8e)
+- **scripts:** Wait for non-empty NUnit results file, not just existence (55be8fd)
+- **scripts:** Bump test results flush poll to 60 seconds (83d3146)
+- **scripts:** Drop -quit from batch test runner; wait for results flush (db4162c)
 
 ---
 
