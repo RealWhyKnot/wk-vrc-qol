@@ -368,6 +368,115 @@ namespace WhyKnot.AvatarQol.Tests {
             Object.DestroyImmediate(tex);
         }
 
+        // ----------------------------------------------------------------
+        // Bake convention
+        //
+        // The painter snapshots the deformed mesh via
+        // SkinnedMeshRenderer.BakeMesh(useScale: true) and multiplies the
+        // baked vertices by transform.localToWorldMatrix to reach world
+        // space. The previous pairing (useScale: false + localToWorldMatrix)
+        // silently broke for SMRs at non-unit scale: vertices came out at
+        // world-rendered size already, and re-applying the SMR scale through
+        // localToWorldMatrix landed the snapshot ~100x off on a typical
+        // 100x Blender-import avatar. Every SceneView ray missed the AABB
+        // and the painter said "off mesh" everywhere.
+        //
+        // This test pins the corrected pairing against an SMR at scale 100.
+        // ----------------------------------------------------------------
+
+        [Test]
+        public void BakeConvention_TrueScaleTimesLocalToWorld_MatchesRenderedSize() {
+            var rig = new GameObject("WkMaskPainterBakeTestRig");
+            Mesh sourceMesh = null;
+            Mesh baked = null;
+            try {
+                // Bind weights while the rig is at unit scale -- bindpose
+                // captures bone.worldToLocalMatrix at that moment, so the
+                // identity transform here gives an identity bindpose.
+                rig.transform.position = Vector3.zero;
+                rig.transform.rotation = Quaternion.identity;
+                rig.transform.localScale = Vector3.one;
+
+                var boneGo = new GameObject("Bone");
+                boneGo.transform.parent = rig.transform;
+                boneGo.transform.localPosition = Vector3.zero;
+                boneGo.transform.localRotation = Quaternion.identity;
+                boneGo.transform.localScale = Vector3.one;
+                var bone = boneGo.transform;
+
+                var smr = rig.AddComponent<SkinnedMeshRenderer>();
+                sourceMesh = BuildUnitCubeSkinnedMesh(bone);
+                smr.sharedMesh = sourceMesh;
+                smr.bones = new[] { bone };
+                smr.rootBone = bone;
+
+                // Scale the rig 100x after binding. The rendered cube now
+                // fills a 100-unit world box.
+                rig.transform.localScale = Vector3.one * 100f;
+
+                baked = new Mesh { hideFlags = HideFlags.HideAndDontSave };
+                smr.BakeMesh(baked, useScale: true);
+                var verts = baked.vertices;
+                Assert.AreEqual(8, verts.Length, "Unit cube should bake to 8 vertices.");
+
+                var m = smr.transform.localToWorldMatrix;
+                var b = new Bounds(m.MultiplyPoint3x4(verts[0]), Vector3.zero);
+                for (int i = 1; i < verts.Length; i++) {
+                    b.Encapsulate(m.MultiplyPoint3x4(verts[i]));
+                }
+
+                // Unit cube at SMR scale 100 -> world size ~100. 5% slack
+                // matches the runtime convention-check threshold in
+                // VerifyBakeConvention. A result near 10000 indicates the
+                // old double-counting bug.
+                Assert.GreaterOrEqual(b.size.x, 95f,
+                    $"Baked world bounds {b.size} too small. Expected ~100 for a unit cube at SMR scale 100.");
+                Assert.LessOrEqual(b.size.x, 105f,
+                    $"Baked world bounds {b.size} too large. Expected ~100; a result near 10000 indicates BakeMesh + localToWorldMatrix is double-counting the SMR scale.");
+                Assert.GreaterOrEqual(b.size.y, 95f);
+                Assert.LessOrEqual(b.size.y, 105f);
+                Assert.GreaterOrEqual(b.size.z, 95f);
+                Assert.LessOrEqual(b.size.z, 105f);
+            } finally {
+                if (baked != null) Object.DestroyImmediate(baked);
+                if (sourceMesh != null) Object.DestroyImmediate(sourceMesh);
+                Object.DestroyImmediate(rig);
+            }
+        }
+
+        private static Mesh BuildUnitCubeSkinnedMesh(Transform bone) {
+            var mesh = new Mesh {
+                name = "WkMaskPainterTestUnitCube",
+                hideFlags = HideFlags.HideAndDontSave,
+            };
+            var verts = new Vector3[8];
+            int idx = 0;
+            for (int z = 0; z < 2; z++) {
+                for (int y = 0; y < 2; y++) {
+                    for (int x = 0; x < 2; x++) {
+                        verts[idx++] = new Vector3(x - 0.5f, y - 0.5f, z - 0.5f);
+                    }
+                }
+            }
+            mesh.vertices = verts;
+            mesh.triangles = new int[] {
+                0, 2, 1,  1, 2, 3,
+                4, 5, 6,  5, 7, 6,
+                0, 1, 4,  1, 5, 4,
+                2, 6, 3,  3, 6, 7,
+                0, 4, 2,  2, 4, 6,
+                1, 3, 5,  3, 7, 5,
+            };
+            var weights = new BoneWeight[8];
+            for (int i = 0; i < 8; i++) {
+                weights[i] = new BoneWeight { boneIndex0 = 0, weight0 = 1f };
+            }
+            mesh.boneWeights = weights;
+            mesh.bindposes = new[] { bone.worldToLocalMatrix };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
         [Test]
         public void GenerateUvWireframe_OutOfRangeSubmeshFallsBackToAll() {
             // SubmeshRange's fallback path runs inside GenerateUvWireframe
