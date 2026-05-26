@@ -44,6 +44,38 @@ namespace WhyKnot.AvatarQol.Tools {
             return s;
         }
 
+        // Force Unity to recompile the painter's shaders, then drop the
+        // cached references so the next BrushShader / PreviewShader / DilateShader
+        // access fetches the freshly-imported asset.
+        //
+        // Unity's ShaderCache occasionally fails to invalidate after a .shader
+        // source edit -- especially when the change touches pass-scope state
+        // directives (Cull/Blend/ZTest), which don't alter the HLSL the compiler
+        // sees per pass. The compiled binary keeps stale state and the painter
+        // appears to ignore code that's clearly in the source. This helper is
+        // the user-facing recovery: one click in the Diagnostics row and the
+        // shader binary is rebuilt from source.
+        internal static void ReimportShaders() {
+            string[] files = { "UvSpaceBrush.shader", "MaskPreviewOverlay.shader", "MaskDilate.shader" };
+            int reimported = 0;
+            foreach (var fileName in files) {
+                var path = $"{ShaderFolder}/{fileName}";
+                if (AssetDatabase.LoadAssetAtPath<Shader>(path) == null) {
+                    AvatarQolLogger.Instance.Warning(
+                        $"MaskPainter: shader missing at {path}; skipping reimport.");
+                    continue;
+                }
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                reimported++;
+            }
+            _brushShader = null;
+            _previewShader = null;
+            _dilateShader = null;
+            AvatarQolLogger.Instance.Info(
+                $"MaskPainter: reimported {reimported} shader(s) and cleared cached references. " +
+                "Next paint session will load fresh compiled binaries.");
+        }
+
         // -----------------------------------------------------------------
         // Pure math (testable from Tests.Editor)
         // -----------------------------------------------------------------

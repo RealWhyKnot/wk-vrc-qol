@@ -79,6 +79,18 @@ namespace WhyKnot.AvatarQol.Tools {
         private bool          _painting;
         private RenderTexture _maskRT;
         private Mesh          _snapshotMesh;
+        // World-space clone of _snapshotMesh: vertices are pre-transformed
+        // into world coordinates so the brush dispatch can draw with
+        // Matrix4x4.identity and the brush shader never has to multiply
+        // by unity_ObjectToWorld. The point is to remove the only path
+        // through which SceneView camera/model-matrix state could leak
+        // into the paint draw -- Graphics.DrawMeshNow has a long history
+        // of inheriting SceneView matrices when called outside a normal
+        // camera render, and the symptom (brush stamps whatever the
+        // SceneView camera sees onto the UV map) maps cleanly to that
+        // failure class. CommandBuffer.DrawMesh + identity matrix +
+        // pre-baked world verts removes all three moving parts at once.
+        private Mesh          _paintWorldMesh;
         private Vector3[]     _snapshotWorldVerts;
         private Bounds        _snapshotWorldBounds;
         private float[]       _bakedBlendShapes;
@@ -206,6 +218,7 @@ namespace WhyKnot.AvatarQol.Tools {
             SceneView.duringSceneGui -= OnSceneGui;
             if (_maskRT != null) { _maskRT.Release(); DestroyImmediate(_maskRT); _maskRT = null; }
             if (_snapshotMesh != null) { DestroyImmediate(_snapshotMesh); _snapshotMesh = null; }
+            if (_paintWorldMesh != null) { DestroyImmediate(_paintWorldMesh); _paintWorldMesh = null; }
             if (_brushMaterial != null) { DestroyImmediate(_brushMaterial); _brushMaterial = null; }
             if (_previewMaterial != null) { DestroyImmediate(_previewMaterial); _previewMaterial = null; }
             if (_uvWireframeTex != null) { DestroyImmediate(_uvWireframeTex); _uvWireframeTex = null; }

@@ -78,6 +78,14 @@ namespace WhyKnot.AvatarQol.Tools {
                             GUILayout.Height(22))) {
                         DumpState();
                     }
+                    using (new EditorGUI.DisabledScope(_maskRT == null)) {
+                        if (GUILayout.Button(
+                                new GUIContent("Probe mask RT",
+                                    "Read back the painted RT and dump a 4x4 UV histogram, per-channel coverage, and the painted region's bounding box. Use after a stroke to verify the brush landed where you expected."),
+                                GUILayout.Height(22))) {
+                            ProbeMaskRT();
+                        }
+                    }
                     if (GUILayout.Button(
                             new GUIContent("Open log folder",
                                 "Open the per-package session log directory in the system file browser."),
@@ -85,6 +93,26 @@ namespace WhyKnot.AvatarQol.Tools {
                         OpenLogFolder();
                     }
                 }
+
+                if (GUILayout.Button(
+                        new GUIContent("Reimport brush shader",
+                            "Force Unity to recompile the painter's shaders and drop the cached references. Use this if the brush starts painting a large camera-visible region instead of a tight patch around the click -- Unity's shader cache occasionally fails to invalidate after a source edit, and a forced reimport rebuilds the compiled binary."),
+                        GUILayout.Height(22))) {
+                    ReimportBrushShader();
+                }
+            }
+        }
+
+        private void ReimportBrushShader() {
+            bool wasPainting = _painting;
+            if (wasPainting) {
+                StopPainting(prompt: false);
+            }
+            MaskPainterIO.ReimportShaders();
+            if (wasPainting) {
+                Diag(LogLevel.Info,
+                    "Reimport brush shader: paint session was stopped to drop the stale brush material. " +
+                    "Click Start again to resume with the freshly-compiled shader.");
             }
         }
     }

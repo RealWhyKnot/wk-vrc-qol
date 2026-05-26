@@ -57,7 +57,18 @@ Shader "Hidden/WhyKnot/MaskPainter/UvSpaceBrush" {
         #if UNITY_UV_STARTS_AT_TOP
             o.pos.y = -o.pos.y;
         #endif
-        o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+        // The caller (MaskPainterWindow.ApplyStroke) draws a pre-baked
+        // world-space mesh via CommandBuffer.DrawMesh with Matrix4x4.identity,
+        // so v.vertex IS the world position. Multiplying by unity_ObjectToWorld
+        // would still be a no-op when the model matrix is identity, but
+        // referencing the built-in opens a door: Unity's editor render path
+        // has historically left unity_ObjectToWorld bound to whatever the
+        // last SceneView draw used, and Graphics.DrawMeshNow inherited that
+        // state. The symptom was the brush stamping the camera-visible UV
+        // region instead of a tiny patch around the click. Reading POSITION
+        // directly keeps the worldPos pipeline independent of any leaked
+        // model matrix.
+        o.worldPos = v.vertex.xyz;
         return o;
     }
 
@@ -75,13 +86,48 @@ Shader "Hidden/WhyKnot/MaskPainter/UvSpaceBrush" {
 
     SubShader {
         Tags { "RenderType"="Opaque" }
-        Cull Off ZWrite Off ZTest Always
-        Blend SrcAlpha OneMinusSrcAlpha
 
-        Pass { Name "Grayscale_RGBA"  ColorMask RGBA CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG }
-        Pass { Name "Channel_R"       ColorMask R    CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG }
-        Pass { Name "Channel_G"       ColorMask G    CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG }
-        Pass { Name "Channel_B"       ColorMask B    CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG }
-        Pass { Name "Channel_A"       ColorMask A    CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG }
+        // State directives REPEATED in every Pass. Setting them at the
+        // SubShader scope wasn't reliably propagating through Unity's
+        // SetPass + DrawMeshNow path -- the previous draw's Cull mode and
+        // blend state were sticking, which made the brush paint every
+        // camera-facing triangle regardless of its world-space distance
+        // to the click. Spell out the state per pass so SetPass(idx)
+        // resets it explicitly.
+        Pass {
+            Name "Grayscale_RGBA"
+            Cull Off ZWrite Off ZTest Always
+            Blend SrcAlpha OneMinusSrcAlpha
+            ColorMask RGBA
+            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+        }
+        Pass {
+            Name "Channel_R"
+            Cull Off ZWrite Off ZTest Always
+            Blend SrcAlpha OneMinusSrcAlpha
+            ColorMask R
+            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+        }
+        Pass {
+            Name "Channel_G"
+            Cull Off ZWrite Off ZTest Always
+            Blend SrcAlpha OneMinusSrcAlpha
+            ColorMask G
+            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+        }
+        Pass {
+            Name "Channel_B"
+            Cull Off ZWrite Off ZTest Always
+            Blend SrcAlpha OneMinusSrcAlpha
+            ColorMask B
+            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+        }
+        Pass {
+            Name "Channel_A"
+            Cull Off ZWrite Off ZTest Always
+            Blend SrcAlpha OneMinusSrcAlpha
+            ColorMask A
+            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+        }
     }
 }

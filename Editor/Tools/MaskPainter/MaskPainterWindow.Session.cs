@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 using WhyKnot.AvatarQol.Internal.Styling;
 using WhyKnot.AvatarQol.Internal.Utilities;
 
@@ -81,7 +82,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 $"  symmetry        : {_symmetryEnabled} (root: {(_symmetryRoot != null ? PathUtility.GetGameObjectPath(_symmetryRoot.gameObject) : "world")})\n" +
                 $"  brush           : radius={_radius:F4}m, strength={_strength:F2}, hardness={_hardness:F2}, mode={(_erase ? "ERASE" : "PAINT")}\n" +
                 $"  output mode     : {(_mode == MaskMode.Grayscale ? "Grayscale (all channels)" : $"Channel {_channel}")}\n" +
-                $"  brush shader    : {(_brushMaterial != null && _brushMaterial.shader != null ? _brushMaterial.shader.name : "(null)")} passes={(_brushMaterial != null && _brushMaterial.shader != null ? _brushMaterial.shader.passCount.ToString() : "0")}\n" +
+                $"  brush shader    : {(_brushMaterial != null && _brushMaterial.shader != null ? _brushMaterial.shader.name : "(null)")} shader.passCount={(_brushMaterial != null && _brushMaterial.shader != null ? _brushMaterial.shader.passCount.ToString() : "0")} material.passCount={(_brushMaterial != null ? _brushMaterial.passCount.ToString() : "0")} supported={(_brushMaterial != null && _brushMaterial.shader != null ? _brushMaterial.shader.isSupported.ToString() : "?")}\n" +
                 $"  preview shader  : {(_previewMaterial != null && _previewMaterial.shader != null ? _previewMaterial.shader.name : "(null)")}\n" +
                 $"  scene views     : {SceneView.sceneViews.Count} (wantsMouseMove enabled on each)");
             SceneView.RepaintAll();
@@ -111,13 +112,38 @@ namespace WhyKnot.AvatarQol.Tools {
             if (_snapshotMesh == null) {
                 _snapshotMesh = new Mesh { name = "WhyKnotMaskPainter_Snapshot", hideFlags = HideFlags.HideAndDontSave };
             }
-            // Explicit useScale: the single-arg overload defaults to false,
-            // which on Unity 2022.3 means the baked vertices are NOT
-            // pre-multiplied by the SMR's lossyScale. We then carry that
-            // scale through localToWorldMatrix below. Spelling it out makes
-            // the convention scale-agnostic across Unity version drift and
-            // documents the pairing.
-            _renderer.BakeMesh(_snapshotMesh, useScale: false);
+            // BakeMesh(useScale: true) outputs vertices in the renderer's
+            // pre-localToWorld local space; localToWorldMatrix below takes
+            // them to world. The opposite pairing (false + localToWorldMatrix)
+            // silently double-counts scale on non-unit SMRs: BakeMesh(false)
+            // already factors out the SMR's local scale at the source, so
+            // re-applying it through localToWorldMatrix lands the snapshot
+            // ~100x off on a typical 100x Blender-import avatar and every
+            // SceneView ray misses.
+            _renderer.BakeMesh(_snapshotMesh, useScale: true);
+
+            // Force-copy the UV0 channel from the source mesh to the snapshot.
+            // The brush shader rasterises triangles into the mask RT by
+            // emitting clip coords from v.uv, so a missing or corrupted UV0
+            // channel on the snapshot means every triangle collapses to the
+            // wrong pixel and the brush appears to "paint the whole visible
+            // mesh". BakeMesh has historically been UV-preserving regardless
+            // of useScale, but the copy is cheap and removes the dependence.
+            // Same for normals, in case anything downstream needs them.
+            var sharedSource = _renderer.sharedMesh;
+            int snapshotVerts = _snapshotMesh.vertexCount;
+            if (sharedSource != null) {
+                if (sharedSource.uv != null && sharedSource.uv.Length == snapshotVerts) {
+                    _snapshotMesh.uv = sharedSource.uv;
+                } else if (sharedSource.uv != null) {
+                    Diag(LogLevel.Warn,
+                        $"Source mesh UV0 length ({sharedSource.uv.Length}) != snapshot vertex count ({snapshotVerts}); skipping UV copy. The brush shader needs UV0 to land strokes in the right texels -- expect wrong-location painting.");
+                }
+                if (sharedSource.normals != null && sharedSource.normals.Length == snapshotVerts) {
+                    _snapshotMesh.normals = sharedSource.normals;
+                }
+            }
+
             var verts = _snapshotMesh.vertices;
             var matrix = _renderer.transform.localToWorldMatrix;
             _snapshotWorldVerts = new Vector3[verts.Length];
@@ -133,6 +159,33 @@ namespace WhyKnot.AvatarQol.Tools {
             } else {
                 _snapshotWorldBounds = new Bounds();
             }
+
+            // Build the world-space paint mesh that ApplyStroke draws via
+            // CommandBuffer with an identity model matrix. Vertices live in
+            // world space so the brush shader can compute distance directly
+            // from POSITION without going through unity_ObjectToWorld, which
+            // historically leaks SceneView camera/model state into editor
+            // draws issued outside a normal camera render.
+            if (_paintWorldMesh == null) {
+                _paintWorldMesh = new Mesh {
+                    name = "WhyKnotMaskPainter_PaintWorld",
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+            }
+            _paintWorldMesh.Clear();
+            _paintWorldMesh.indexFormat = _snapshotMesh.indexFormat;
+            _paintWorldMesh.vertices = _snapshotWorldVerts;
+            if (_snapshotMesh.uv != null && _snapshotMesh.uv.Length == _snapshotWorldVerts.Length) {
+                _paintWorldMesh.uv = _snapshotMesh.uv;
+            }
+            if (_snapshotMesh.normals != null && _snapshotMesh.normals.Length == _snapshotWorldVerts.Length) {
+                _paintWorldMesh.normals = _snapshotMesh.normals;
+            }
+            _paintWorldMesh.subMeshCount = _snapshotMesh.subMeshCount;
+            for (int s = 0; s < _snapshotMesh.subMeshCount; s++) {
+                _paintWorldMesh.SetTriangles(_snapshotMesh.GetTriangles(s), s, calculateBounds: false);
+            }
+            _paintWorldMesh.RecalculateBounds();
 
             var mesh = _renderer.sharedMesh;
             int shapeCount = mesh != null ? mesh.blendShapeCount : 0;
@@ -156,9 +209,80 @@ namespace WhyKnot.AvatarQol.Tools {
             VerifyBakeConvention();
             Diag(LogLevel.Trace,
                 $"Bake complete: verts={verts.Length}, submeshes={_snapshotMesh.subMeshCount}, worldBounds=({_snapshotWorldBounds.min} .. {_snapshotWorldBounds.max}), size={_snapshotWorldBounds.size}");
+
+            // UV range probe -- fires at INFO so it surfaces without
+            // Verbose Log. The brush shader emits clip coords from v.uv;
+            // UVs outside [0,1] would put triangles offscreen, and UVs
+            // all clustered at a single value would smush everything
+            // into a single pixel.
+            var snapUvsForRange = _snapshotMesh.uv;
+            if (snapUvsForRange != null && snapUvsForRange.Length > 0) {
+                float uMin = float.PositiveInfinity, uMax = float.NegativeInfinity;
+                float vMin = float.PositiveInfinity, vMax = float.NegativeInfinity;
+                int outOfUnitBox = 0;
+                for (int i = 0; i < snapUvsForRange.Length; i++) {
+                    var uv = snapUvsForRange[i];
+                    if (uv.x < uMin) uMin = uv.x;
+                    if (uv.x > uMax) uMax = uv.x;
+                    if (uv.y < vMin) vMin = uv.y;
+                    if (uv.y > vMax) vMax = uv.y;
+                    if (uv.x < -0.01f || uv.x > 1.01f || uv.y < -0.01f || uv.y > 1.01f) outOfUnitBox++;
+                }
+                Diag(LogLevel.Info,
+                    $"Snapshot UV0 range: u=[{uMin:0.000}..{uMax:0.000}], v=[{vMin:0.000}..{vMax:0.000}], samples outside [0,1]: {outOfUnitBox} of {snapUvsForRange.Length}. First UV: {snapUvsForRange[0]}.");
+            } else {
+                Diag(LogLevel.Warn,
+                    "Snapshot UV0 channel is null or empty -- the brush shader can't rasterise to the mask RT without UVs. Strokes will land at clip (-1,-1) and the painter will appear to do nothing.");
+            }
+
+            // Detailed verbose-only dump that pins down the brush dispatch
+            // inputs: snapshot UV channel sanity, snapshot local bounds vs
+            // the world bounds we just computed, and the matrix used. If a
+            // future user reports "brush paints in the wrong place", this
+            // tells us whether v.uv, v.vertex, or unity_ObjectToWorld is
+            // the culprit. (See also DumpFirstMouseDown for ray-side.)
+            var snapUvs = _snapshotMesh.uv;
+            var srcUvs  = sharedSource != null ? sharedSource.uv : null;
+            int uvMatchSamples = 0;
+            int uvMismatchSamples = 0;
+            if (snapUvs != null && srcUvs != null) {
+                int n = Mathf.Min(snapUvs.Length, srcUvs.Length);
+                int step = Mathf.Max(1, n / 16);
+                for (int i = 0; i < n; i += step) {
+                    if (snapUvs[i] == srcUvs[i]) uvMatchSamples++;
+                    else uvMismatchSamples++;
+                }
+            }
+            string firstSnapVert = verts.Length > 0
+                ? verts[0].ToString("F5")
+                : "(none)";
+            string firstWorldVert = verts.Length > 0
+                ? _snapshotWorldVerts[0].ToString("F5")
+                : "(none)";
+            string firstSrcUv = (srcUvs != null && srcUvs.Length > 0)
+                ? srcUvs[0].ToString("F5")
+                : "(none)";
+            string firstSnapUv = (snapUvs != null && snapUvs.Length > 0)
+                ? snapUvs[0].ToString("F5")
+                : "(none)";
+            Diag(LogLevel.Trace,
+                $"Bake detail:\n" +
+                $"  snapshot mesh.bounds (local) : {_snapshotMesh.bounds}\n" +
+                $"  snapshot vertexCount         : {snapshotVerts}, source vertexCount: {(sharedSource != null ? sharedSource.vertexCount : 0)}\n" +
+                $"  snapshot UV array length     : {(snapUvs != null ? snapUvs.Length : 0)}, source UV length: {(srcUvs != null ? srcUvs.Length : 0)}\n" +
+                $"  UV sample match (1/16th step): {uvMatchSamples} matched, {uvMismatchSamples} mismatched\n" +
+                $"  first source UV              : {firstSrcUv}\n" +
+                $"  first snapshot UV            : {firstSnapUv}\n" +
+                $"  first snapshot vertex (local): {firstSnapVert}\n" +
+                $"  first snapshot vertex (world): {firstWorldVert}\n" +
+                $"  matrix (localToWorld)        : {matrix}");
+            if (uvMismatchSamples > 0) {
+                Diag(LogLevel.Warn,
+                    $"Snapshot UV0 channel does not match the source mesh's UV0 ({uvMismatchSamples} of {uvMatchSamples + uvMismatchSamples} samples differ). Brush strokes will land in the wrong texels until the cause is found.");
+            }
         }
 
-        // One-shot per session: confirm the BakeMesh(false) + localToWorldMatrix
+        // One-shot per session: confirm the BakeMesh(true) + localToWorldMatrix
         // pairing produced world bounds that actually overlap _renderer.bounds.
         // A wildly mismatched ratio is the smoking gun for the rootBone-vs-SMR
         // coordinate-space class of bug, where the SMR transform has scale 1
@@ -244,31 +368,77 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void ApplyStroke() {
-            if (_maskRT == null || _brushMaterial == null || _snapshotMesh == null || _renderer == null) return;
-            var prev = RenderTexture.active;
-            try {
-                Graphics.SetRenderTarget(_maskRT);
-                _brushMaterial.SetVector("_BrushCenter", _hitWorld);
-                if (_symmetryEnabled) {
-                    var mirror = MaskPainterIO.MirrorAcrossLocalX(_hitWorld, _symmetryRoot);
-                    _brushMaterial.SetVector("_MirrorBrushCenter", mirror);
-                    _brushMaterial.SetFloat("_SymmetryEnabled", 1f);
-                } else {
-                    _brushMaterial.SetFloat("_SymmetryEnabled", 0f);
-                }
-                _brushMaterial.SetFloat("_BrushRadius",   _radius);
-                _brushMaterial.SetFloat("_BrushHardness", _hardness);
-                _brushMaterial.SetFloat("_Strength",      _strength);
-                _brushMaterial.SetColor("_BrushColor",    _erase ? new Color(0, 0, 0, 1) : Color.white);
-                _brushMaterial.SetPass(PassForMode());
+            if (_maskRT == null || _brushMaterial == null || _paintWorldMesh == null || _renderer == null) return;
 
-                var matrix = _renderer.transform.localToWorldMatrix;
-                var range = MaskPainterIO.SubmeshRange(_submeshIndex, _snapshotMesh.subMeshCount, WarnSubmeshDrift);
+            // Upload uniforms onto the material itself (not a MaterialPropertyBlock)
+            // so the GetVector/GetFloat readback below still reflects what's on the
+            // GPU. CommandBuffer.DrawMesh consults the material's properties when
+            // no per-draw MPB is supplied.
+            _brushMaterial.SetVector("_BrushCenter", _hitWorld);
+            if (_symmetryEnabled) {
+                var mirror = MaskPainterIO.MirrorAcrossLocalX(_hitWorld, _symmetryRoot);
+                _brushMaterial.SetVector("_MirrorBrushCenter", mirror);
+                _brushMaterial.SetFloat("_SymmetryEnabled", 1f);
+            } else {
+                _brushMaterial.SetFloat("_SymmetryEnabled", 0f);
+            }
+            _brushMaterial.SetFloat("_BrushRadius",   _radius);
+            _brushMaterial.SetFloat("_BrushHardness", _hardness);
+            _brushMaterial.SetFloat("_Strength",      _strength);
+            _brushMaterial.SetColor("_BrushColor",    _erase ? new Color(0, 0, 0, 1) : Color.white);
+
+            int passIndex = PassForMode();
+
+            // First-dispatch uniform readback. SetVector / SetFloat silently
+            // no-op if the shader doesn't declare the uniform under that
+            // exact name; reading back through the same material confirms
+            // the upload reached the GPU side.
+            if (_dispatchCount == 0) {
+                var rbCenter = _brushMaterial.GetVector("_BrushCenter");
+                var rbRadius = _brushMaterial.GetFloat("_BrushRadius");
+                var rbSym    = _brushMaterial.GetFloat("_SymmetryEnabled");
+                var rbStr    = _brushMaterial.GetFloat("_Strength");
+                var rbHard   = _brushMaterial.GetFloat("_BrushHardness");
+                Diag(LogLevel.Info,
+                    $"Brush uniform readback:\n" +
+                    $"  _BrushCenter (sent {_hitWorld})       -> {rbCenter}\n" +
+                    $"  _BrushRadius (sent {_radius:F6})      -> {rbRadius:F6}\n" +
+                    $"  _SymmetryEnabled (sent {(_symmetryEnabled ? 1f : 0f)}) -> {rbSym}\n" +
+                    $"  _Strength (sent {_strength:F3})       -> {rbStr:F3}\n" +
+                    $"  _BrushHardness (sent {_hardness:F3})  -> {rbHard:F3}\n" +
+                    $"  renderer localToWorld (baked into _paintWorldMesh) -> {_renderer.transform.localToWorldMatrix}\n" +
+                    $"  dispatch matrix (passed to CommandBuffer.DrawMesh) -> identity (mesh verts are already world-space)\n" +
+                    $"  pass index                              -> {passIndex}");
+            }
+
+            var range = MaskPainterIO.SubmeshRange(_submeshIndex, _paintWorldMesh.subMeshCount, WarnSubmeshDrift);
+
+            // Route the draw through a CommandBuffer rather than
+            // Graphics.SetRenderTarget + material.SetPass + Graphics.DrawMeshNow.
+            // The immediate-mode path inherits GPU state (most importantly model
+            // and view matrices) from whatever the SceneView render loop drew
+            // most recently, which made the brush stamp the camera-visible UV
+            // region instead of the small world-radius patch around the click.
+            // CommandBuffer.SetRenderTarget restores the previous active target
+            // after ExecuteCommandBuffer, so the manual RenderTexture.active
+            // save/restore that wrapped the old DrawMeshNow call is no longer
+            // needed.
+            var cmd = new CommandBuffer { name = "MaskPainter Apply Stroke" };
+            try {
+                cmd.SetRenderTarget(_maskRT);
+                cmd.SetViewport(new Rect(0, 0, _maskRT.width, _maskRT.height));
+                // Identity view/projection scrubs any SceneView VP state that
+                // might have stuck. The brush shader's vert writes clip coords
+                // directly from UV so these matrices shouldn't matter, but
+                // setting them makes the contract explicit and shuts down one
+                // more potential leak channel.
+                cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
                 for (int s = range.start; s < range.end; s++) {
-                    Graphics.DrawMeshNow(_snapshotMesh, matrix, s);
+                    cmd.DrawMesh(_paintWorldMesh, Matrix4x4.identity, _brushMaterial, s, passIndex);
                 }
+                Graphics.ExecuteCommandBuffer(cmd);
             } finally {
-                RenderTexture.active = prev;
+                cmd.Release();
             }
             _lastStrokeTime = EditorApplication.timeSinceStartup;
             _dispatchCount++;
@@ -276,7 +446,56 @@ namespace WhyKnot.AvatarQol.Tools {
             if (_dispatchCount == 1) {
                 Diag(LogLevel.Info,
                     $"First stroke dispatched. center={_hitWorld}, radius={_radius:F4}m, mode={(_erase ? "erase" : "paint")}, pass={PassForMode()}, submeshes={(_submeshIndex < 0 ? "all" : _submeshIndex.ToString())}");
+
+                // Snapshot-positioning sanity: find the snapshot vertex
+                // closest to _BrushCenter in world space, log its distance.
+                // If the closest vertex is hundreds of metres away, the
+                // brush will land outside every triangle's radius and the
+                // user will see nothing. If it's millimetres away (typical),
+                // the shader's interpolation should put fragments near the
+                // brush center within the radius -- and only those should
+                // pass the clip.
+                if (_snapshotWorldVerts != null && _snapshotWorldVerts.Length > 0) {
+                    float minDist = float.PositiveInfinity;
+                    int minIdx = -1;
+                    for (int i = 0; i < _snapshotWorldVerts.Length; i++) {
+                        float d = Vector3.Distance(_snapshotWorldVerts[i], _hitWorld);
+                        if (d < minDist) { minDist = d; minIdx = i; }
+                    }
+                    var mesh = _renderer != null ? _renderer.sharedMesh : null;
+                    Vector2 closestUv = (mesh != null && mesh.uv != null && minIdx >= 0 && minIdx < mesh.uv.Length) ? mesh.uv[minIdx] : Vector2.zero;
+                    Diag(LogLevel.Info,
+                        $"  closest snapshot vertex to brush center: idx={minIdx}, vert(world)={_snapshotWorldVerts[minIdx]}, distance={minDist:F4}m, uv={closestUv}, hitUv={_hitUv}.");
+                }
+
+                // Sanity check at first dispatch: if the brush world-radius
+                // is the same order of magnitude (or larger) than the
+                // snapshot's world bounds diagonal, distance-based clipping
+                // in the shader will let every fragment through and the
+                // brush will appear to paint the entire visible mesh.
+                // Past bug signature, kept as a guard.
+                float boundsDiag = _snapshotWorldBounds.size.magnitude;
+                if (boundsDiag > 0.0001f && _radius >= boundsDiag * 0.25f) {
+                    Diag(LogLevel.Warn,
+                        $"Brush radius ({_radius:F3}m) is >=25% of snapshot world-bounds diagonal ({boundsDiag:F3}m). Strokes will cover most or all of the visible mesh -- check that the SMR scale and brush radius are in compatible units.");
+                }
+
+                // Auto-probe the mask RT immediately after the first
+                // stroke so we don't depend on the user clicking the
+                // Probe button. The readback is ~5 ms at 1024x1024;
+                // running it once per session is fine. Coverage > a
+                // few percent on a single small stroke is a red flag.
+                ProbeMaskRT();
             }
+            // Per-stroke verbose trace. Helps when the user reports
+            // "strokes land in the wrong place" -- correlates dispatch
+            // count with brush parameters and hit location. Promoted to
+            // INFO for the first 3 dispatches so it surfaces without
+            // requiring Verbose Log to be enabled.
+            var perStrokeLine =
+                $"Stroke dispatch #{_dispatchCount} (in-stroke #{_strokeDispatches}): center={_hitWorld}, hitUv={_hitUv}, radius={_radius:F4}m, strength={_strength:F2}, hardness={_hardness:F2}, pass={PassForMode()}, symmetry={(_symmetryEnabled ? "on" : "off")}.";
+            if (_dispatchCount <= 3) Diag(LogLevel.Info, perStrokeLine);
+            else                     Diag(LogLevel.Trace, perStrokeLine);
             Repaint();
         }
 
