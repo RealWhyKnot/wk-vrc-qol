@@ -14,6 +14,7 @@ The most recent release is at the top.
 ### Added
 - **uv-transfer:** Mesh-to-mesh texture rebake tool (3739848)
 - **mask-painter:** UV map preview pane plus raycast snapshot fixes (cf1bbb6)
+- **hot-reload:** Auto-reimport shaders on file change (1b8a6cd)
 
 ### Changed
 - **uv-transfer:** Parallel core + flat spatial grid + AABB early-out (c30e34b)
