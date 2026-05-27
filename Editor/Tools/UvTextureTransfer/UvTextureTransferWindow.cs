@@ -50,6 +50,8 @@ namespace WhyKnot.AvatarQol.Tools {
         [SerializeField] private UvTextureTransferCore.AlignmentMode _alignment = UvTextureTransferCore.AlignmentMode.BoundingBox;
         [SerializeField] private int   _resolution = 1024;
         [SerializeField] private float _maxDistance = 0f;     // 0 = no cap
+        [SerializeField] private int   _supersample = 2;      // samples per axis; 2 = 4 subpixel samples
+        [SerializeField] private int   _paddingPixels = 8;    // UV island dilation after bake
         [SerializeField] private bool  _sRGBOnSave = true;    // for color textures
         [SerializeField] private Color _fallbackColor = new Color(0, 0, 0, 0);
         [SerializeField] private bool  _verboseLog;
@@ -60,12 +62,16 @@ namespace WhyKnot.AvatarQol.Tools {
         private string _lastSavedPath;
         private UvTextureTransferCore.TransferResult _lastResult;
         private bool _hasResult;
+        private Vector2 _pageScroll;
+        private double _nextAnimatedRepaint;
 
         // ---- Prefs keys ----
         private const string PrefsPrefix     = "dev.whyknot.wk-vrc-qol.UvTextureTransfer.";
         private const string PrefsAlignment  = PrefsPrefix + "Alignment";
         private const string PrefsResolution = PrefsPrefix + "Resolution";
         private const string PrefsMaxDist    = PrefsPrefix + "MaxDistance";
+        private const string PrefsSupersample = PrefsPrefix + "Supersample";
+        private const string PrefsPadding    = PrefsPrefix + "PaddingPixels";
         private const string PrefsSRGB       = PrefsPrefix + "SRGB";
         private const string PrefsVerbose    = PrefsPrefix + "Verbose";
 
@@ -87,28 +93,47 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             LoadPrefs();
             RefreshSourceMeshOptions();
+            EditorApplication.update -= RepaintAnimatedChrome;
+            EditorApplication.update += RepaintAnimatedChrome;
         }
 
         private void OnDisable() {
             if (_previewTex != null) { DestroyImmediate(_previewTex); _previewTex = null; }
             SavePrefs();
+            EditorApplication.update -= RepaintAnimatedChrome;
+        }
+
+        private void RepaintAnimatedChrome() {
+            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         // ---- GUI ----
 
         private void OnGUI() {
             using var _theme = WkStyles.Scope(WkTheme.WhyKnot);
-            DrawTitleBar();
-            DrawHelpNotice();
-            DrawSourceSection();
-            EditorGUILayout.Space(2);
-            DrawTargetSection();
-            EditorGUILayout.Space(2);
-            DrawBakeOptionsSection();
-            EditorGUILayout.Space(2);
-            DrawBakeBar();
-            EditorGUILayout.Space(2);
-            DrawPreviewSection();
+            using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
+                DrawTitleBar();
+                WkStyles.AnimatedAccentLine();
+
+                using (var s = new EditorGUILayout.ScrollViewScope(
+                        _pageScroll, false, false,
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.ExpandHeight(true))) {
+                    _pageScroll = s.scrollPosition;
+                    DrawHelpNotice();
+                    DrawSourceSection();
+                    EditorGUILayout.Space(2);
+                    DrawTargetSection();
+                    EditorGUILayout.Space(2);
+                    DrawBakeOptionsSection();
+                    EditorGUILayout.Space(2);
+                    DrawBakeBar();
+                    EditorGUILayout.Space(2);
+                    DrawPreviewSection();
+                }
+
+                WkStyles.WindowFooter();
+            }
         }
 
         private void DrawTitleBar() {
@@ -273,6 +298,29 @@ namespace WhyKnot.AvatarQol.Tools {
                         if (next != idx) { _resolution = resolutions[next]; SavePrefs(); }
                     });
 
+                DrawResolutionHint();
+
+                WkStyles.LabeledField(
+                    new GUIContent("Anti-aliasing",
+                        "Subpixel samples per output texel. Higher values reduce jagged thin masks and triangle-edge stair-steps at the cost of bake time."),
+                    () => {
+                        var options = new[] { 1, 2, 3, 4 };
+                        var labels = new[] { "1x (fast)", "2x (4 samples)", "3x (9 samples)", "4x (16 samples)" };
+                        int idx = Array.IndexOf(options, Mathf.Clamp(_supersample, 1, 4));
+                        if (idx < 0) idx = 1;
+                        int next = EditorGUILayout.Popup(idx, labels, GUILayout.Width(142));
+                        if (next != idx) { _supersample = options[next]; SavePrefs(); }
+                    });
+
+                WkStyles.LabeledField(
+                    new GUIContent("Island padding",
+                        "Dilate covered target UV texels outward by this many pixels after the bake. Prevents transparent/black fallback pixels from bleeding into seams under bilinear filtering."),
+                    () => {
+                        int prev = _paddingPixels;
+                        _paddingPixels = EditorGUILayout.IntSlider(_paddingPixels, 0, 32);
+                        if (prev != _paddingPixels) SavePrefs();
+                    });
+
                 WkStyles.LabeledField(
                     new GUIContent("Max distance (m)",
                         "Drop target texels whose nearest point on the source mesh is further than this. 0 disables the cap. Useful for outfits that should leave the rest of the body texture alone -- set to e.g. 0.02 so only texels near the outfit pick up source color."),
@@ -295,6 +343,25 @@ namespace WhyKnot.AvatarQol.Tools {
                         "On for color textures (albedo / emission). Off for mask / normal / metallic / occlusion outputs."),
                     _sRGBOnSave);
                 if (prevSRGB != _sRGBOnSave) SavePrefs();
+            }
+        }
+
+        private void DrawResolutionHint() {
+            if (_sourceTexture == null) return;
+            int sourceMax = Mathf.Max(_sourceTexture.width, _sourceTexture.height);
+            if (sourceMax <= _resolution) return;
+            using (new EditorGUILayout.HorizontalScope()) {
+                GUILayout.Space(WkStyles.LabelColumn);
+                EditorGUILayout.LabelField(
+                    new GUIContent($"Source is {_sourceTexture.width}x{_sourceTexture.height}; use {sourceMax} for the sharpest mask bake.",
+                        "Baking below the source resolution downsamples the source texture. That can be fine for soft color maps, but thin black/white masks usually look better at source resolution."),
+                    WkStyles.Muted);
+                if (GUILayout.Button(
+                        new GUIContent("Match source", "Set output resolution to the source texture's larger dimension."),
+                        EditorStyles.miniButton, GUILayout.Width(94))) {
+                    _resolution = Mathf.Clamp(sourceMax, 256, 4096);
+                    SavePrefs();
+                }
             }
         }
 
@@ -340,7 +407,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 if (_hasResult) {
                     EditorGUILayout.LabelField(
-                        $"{_resolution}²  ·  covered {_lastResult.coveredTexels:N0} / {_lastResult.totalTexels:N0}  ·  rejected {_lastResult.rejectedByDistance:N0}  ·  max dist {_lastResult.maxObservedDistance:F4} m",
+                        $"{_resolution}²  ·  AA {_lastResult.supersample}x  ·  covered {_lastResult.coveredTexels:N0} / {_lastResult.totalTexels:N0}  ·  padded {_lastResult.paddedTexels:N0}  ·  rejected {_lastResult.rejectedByDistance:N0}  ·  max dist {_lastResult.maxObservedDistance:F4} m",
                         WkStyles.Muted);
                 }
                 const float previewSize = 320f;
@@ -419,6 +486,8 @@ namespace WhyKnot.AvatarQol.Tools {
                 maxDistance         = _maxDistance,
                 gridDim             = 0,
                 fallbackColor       = _fallbackColor,
+                supersample         = _supersample,
+                paddingPixels       = _paddingPixels,
                 onProgress          = ReportProgress,
             };
 
@@ -434,7 +503,9 @@ namespace WhyKnot.AvatarQol.Tools {
                 AvatarQolLogger.Instance.Info(
                     $"UV Texture Transfer bake done in {elapsed:F2}s -- " +
                     $"covered {result.coveredTexels:N0}/{result.totalTexels:N0} texels, " +
-                    $"rejected {result.rejectedByDistance:N0}, max observed distance {result.maxObservedDistance:F4} m, " +
+                    $"padded {result.paddedTexels:N0}, rejected {result.rejectedByDistance:N0}, " +
+                    $"aa {result.supersample}x, padding {result.paddingPixels}px, " +
+                    $"max observed distance {result.maxObservedDistance:F4} m, " +
                     $"output {_previewTex.width}x{_previewTex.height}.");
             } catch (Exception ex) {
                 AvatarQolLogger.Instance.Exception(ex, "UV Texture Transfer bake");
@@ -514,6 +585,8 @@ namespace WhyKnot.AvatarQol.Tools {
             _alignment   = (UvTextureTransferCore.AlignmentMode)EditorPrefs.GetInt(PrefsAlignment, (int)_alignment);
             _resolution  = EditorPrefs.GetInt(PrefsResolution, _resolution);
             _maxDistance = EditorPrefs.GetFloat(PrefsMaxDist, _maxDistance);
+            _supersample = Mathf.Clamp(EditorPrefs.GetInt(PrefsSupersample, _supersample), 1, 4);
+            _paddingPixels = Mathf.Clamp(EditorPrefs.GetInt(PrefsPadding, _paddingPixels), 0, 32);
             _sRGBOnSave  = EditorPrefs.GetBool(PrefsSRGB, _sRGBOnSave);
             _verboseLog  = EditorPrefs.GetBool(PrefsVerbose, _verboseLog);
         }
@@ -522,6 +595,8 @@ namespace WhyKnot.AvatarQol.Tools {
             EditorPrefs.SetInt(PrefsAlignment, (int)_alignment);
             EditorPrefs.SetInt(PrefsResolution, _resolution);
             EditorPrefs.SetFloat(PrefsMaxDist, _maxDistance);
+            EditorPrefs.SetInt(PrefsSupersample, _supersample);
+            EditorPrefs.SetInt(PrefsPadding, _paddingPixels);
             EditorPrefs.SetBool(PrefsSRGB, _sRGBOnSave);
             EditorPrefs.SetBool(PrefsVerbose, _verboseLog);
         }

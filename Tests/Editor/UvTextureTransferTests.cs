@@ -501,6 +501,75 @@ namespace WhyKnot.AvatarQol.Tests {
             }
         }
 
+        [Test]
+        public void Transfer_SupersamplingAntiAliasesPartialUvCoverage() {
+            var mesh = BuildSmallCornerTriangleMesh();
+            var src = BuildFlatColorTexture(Color.white);
+            try {
+                var opt = new UvTextureTransferCore.TransferOptions {
+                    sourceMesh        = mesh,
+                    sourceSubmesh     = -1,
+                    sourceTexture     = src,
+                    targetMesh        = mesh,
+                    targetSubmesh     = -1,
+                    outputResolution  = 4,
+                    alignment         = UvTextureTransferCore.AlignmentMode.Identity,
+                    sourceWorldMatrix = Matrix4x4.identity,
+                    targetWorldMatrix = Matrix4x4.identity,
+                    maxDistance       = 0f,
+                    gridDim           = 4,
+                    fallbackColor     = Color.black,
+                    supersample       = 2,
+                    paddingPixels     = 0,
+                };
+                var result = UvTextureTransferCore.Transfer(opt);
+                var edge = result.output.GetPixel(1, 0);
+                Assert.Greater(edge.r, 0.60f, "Three of four subpixels should be covered.");
+                Assert.Less(edge.r, 0.90f, "One uncovered subpixel should pull the edge below solid white.");
+                Assert.AreEqual(2, result.supersample);
+                Object.DestroyImmediate(result.output);
+            } finally {
+                Object.DestroyImmediate(mesh);
+                Object.DestroyImmediate(src);
+            }
+        }
+
+        [Test]
+        public void Transfer_UvIslandPaddingExtendsCoveredEdgeColor() {
+            var mesh = BuildLeftHalfUvMesh();
+            var src = BuildFlatColorTexture(Color.green);
+            try {
+                var opt = new UvTextureTransferCore.TransferOptions {
+                    sourceMesh        = mesh,
+                    sourceSubmesh     = -1,
+                    sourceTexture     = src,
+                    targetMesh        = mesh,
+                    targetSubmesh     = -1,
+                    outputResolution  = 4,
+                    alignment         = UvTextureTransferCore.AlignmentMode.Identity,
+                    sourceWorldMatrix = Matrix4x4.identity,
+                    targetWorldMatrix = Matrix4x4.identity,
+                    maxDistance       = 0f,
+                    gridDim           = 4,
+                    fallbackColor     = Color.magenta,
+                    supersample       = 1,
+                    paddingPixels     = 1,
+                };
+                var result = UvTextureTransferCore.Transfer(opt);
+                var padded = result.output.GetPixel(2, 1);
+                var untouched = result.output.GetPixel(3, 1);
+                Assert.Less(padded.r, 0.1f, "One-pixel padding should overwrite the first fallback column.");
+                Assert.Greater(padded.g, 0.9f);
+                Assert.Greater(untouched.r, 0.9f, "Pixels beyond the padding distance should keep fallback color.");
+                Assert.Less(untouched.g, 0.1f);
+                Assert.Greater(result.paddedTexels, 0);
+                Object.DestroyImmediate(result.output);
+            } finally {
+                Object.DestroyImmediate(mesh);
+                Object.DestroyImmediate(src);
+            }
+        }
+
         // ----------------------------------------------------------------
         // SampleBilinearClamp32 -- thread-safe stand-in for Texture2D.GetPixelBilinear.
         // ----------------------------------------------------------------
@@ -732,6 +801,38 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector2(0, 0.5f), new Vector2(1, 0.5f),
             };
             mesh.triangles = new[] { 0, 1, 2, 1, 3, 2 };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static Mesh BuildSmallCornerTriangleMesh() {
+            var mesh = new Mesh { name = "SmallCornerTriangle" };
+            mesh.vertices = new[] {
+                new Vector3(0, 0, 0),
+                new Vector3(0.52f, 0, 0),
+                new Vector3(0, 0.52f, 0),
+            };
+            mesh.uv = new[] {
+                new Vector2(0, 0),
+                new Vector2(0.52f, 0),
+                new Vector2(0, 0.52f),
+            };
+            mesh.triangles = new[] { 0, 1, 2 };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static Mesh BuildLeftHalfUvMesh() {
+            var mesh = new Mesh { name = "LeftHalfUvQuad" };
+            mesh.vertices = new[] {
+                new Vector3(0, 0, 0), new Vector3(0.5f, 0, 0),
+                new Vector3(0.5f, 1, 0), new Vector3(0, 1, 0),
+            };
+            mesh.uv = new[] {
+                new Vector2(0, 0), new Vector2(0.5f, 0),
+                new Vector2(0.5f, 1), new Vector2(0, 1),
+            };
+            mesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
             mesh.RecalculateBounds();
             return mesh;
         }

@@ -5,8 +5,9 @@
 // mesh by closest-point correspondence on the meshes' 3D geometry.
 //
 // Pipeline:
-//   1. UV-rasterize the target mesh. For every output texel store
-//      (target triangle index, barycentric weights).
+//   1. UV-rasterize the target mesh. For every output texel sample store
+//      (target triangle index, barycentric weights). Quality mode repeats
+//      this at several subpixel offsets and averages the results.
 //   2. Build a flat uniform spatial grid over the source mesh's
 //      triangles for cheap nearest-triangle queries. The grid stores
 //      a single int[] of triangle indices plus a parallel int[] of
@@ -16,6 +17,10 @@
 //      the closest source triangle (AABB-distance early-out skips
 //      triangles already further than the current best hit), and
 //      bilinear-sample the source texture into the output.
+//   4. Optionally dilate covered texels into adjacent uncovered texels
+//      for standard UV island padding. This prevents transparent/black
+//      fallback pixels from bleeding into island borders under bilinear
+//      filtering in Unity.
 //
 // Performance: the per-texel work in step 3 runs under Parallel.For
 // over output rows; the source texture is pre-read into a Color32[]
@@ -341,11 +346,19 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         internal static UvSample[] RasterizeTargetUv(Vector2[] uvs, int[] triangles, int resolution) {
+            return RasterizeTargetUv(uvs, triangles, resolution, 0.5f, 0.5f);
+        }
+
+        internal static UvSample[] RasterizeTargetUv(
+                Vector2[] uvs, int[] triangles, int resolution,
+                float sampleOffsetX, float sampleOffsetY) {
             var samples = new UvSample[resolution * resolution];
             for (int i = 0; i < samples.Length; i++) samples[i].triangleIndex = -1;
             if (uvs == null || uvs.Length == 0 || triangles == null || triangles.Length < 3) {
                 return samples;
             }
+            sampleOffsetX = Mathf.Clamp01(sampleOffsetX);
+            sampleOffsetY = Mathf.Clamp01(sampleOffsetY);
             int triCount = triangles.Length / 3;
             float res = resolution;
             for (int t = 0; t < triCount; t++) {
@@ -375,9 +388,9 @@ namespace WhyKnot.AvatarQol.Tools {
                 float invDenom = 1f / denom;
 
                 for (int y = yMin; y <= yMax; y++) {
-                    float fy = (y + 0.5f) / res;
+                    float fy = (y + sampleOffsetY) / res;
                     for (int x = xMin; x <= xMax; x++) {
-                        float fx = (x + 0.5f) / res;
+                        float fx = (x + sampleOffsetX) / res;
                         Vector2 v2 = new Vector2(fx - a.x, fy - a.y);
                         float d20 = Vector2.Dot(v2, v0);
                         float d21 = Vector2.Dot(v2, v1);
@@ -477,6 +490,8 @@ namespace WhyKnot.AvatarQol.Tools {
             public float maxDistance;
             public int gridDim;
             public Color fallbackColor;
+            public int supersample;
+            public int paddingPixels;
             // Coarse phase progress: 0.0 setup, ~0.2 after rasterize,
             // ~0.95 after parallel transfer, 1.0 done. Called only from
             // the main thread, not the worker threads.
@@ -489,6 +504,9 @@ namespace WhyKnot.AvatarQol.Tools {
             public int totalTexels;
             public int rejectedByDistance;
             public float maxObservedDistance;
+            public int supersample;
+            public int paddingPixels;
+            public int paddedTexels;
         }
 
         internal static TransferResult Transfer(TransferOptions opt) {
@@ -521,8 +539,10 @@ namespace WhyKnot.AvatarQol.Tools {
                 : PickGridDim(sourceTris.Length / 3);
             var grid = BuildSpatialGrid(sourceVerts, sourceTris, gridDim);
 
-            var samples = RasterizeTargetUv(targetUvs, targetTris, res);
-            opt.onProgress?.Invoke(0.2f);
+            int samplesPerAxis = Mathf.Clamp(opt.supersample <= 0 ? 1 : opt.supersample, 1, 4);
+            int sampleCount = samplesPerAxis * samplesPerAxis;
+            int paddingPixels = Mathf.Clamp(opt.paddingPixels, 0, 128);
+            opt.onProgress?.Invoke(0.15f);
 
             // Cache source pixels for thread-safe bilinear sampling. The
             // isReadable check above means GetPixels32 will succeed.
@@ -532,58 +552,93 @@ namespace WhyKnot.AvatarQol.Tools {
 
             var outputPixels = new Color32[res * res];
             Color32 fallback32 = ColorToColor32(opt.fallbackColor);
-            for (int i = 0; i < outputPixels.Length; i++) outputPixels[i] = fallback32;
+            var sumR = new ushort[outputPixels.Length];
+            var sumG = new ushort[outputPixels.Length];
+            var sumB = new ushort[outputPixels.Length];
+            var sumA = new ushort[outputPixels.Length];
+            var acceptedSamples = new byte[outputPixels.Length];
 
-            int coveredCounter = 0;
             int rejectedCounter = 0;
             float maxDistObserved = 0f;
             object statsLock = new object();
 
-            // Parallel core. Each row writes a disjoint stripe of the
-            // output buffer and reads only the immutable inputs, so we
-            // need no per-pixel synchronisation. Per-row stats merge
-            // through a single lock once per row.
-            Parallel.For(0, res, row => {
-                int localCovered = 0;
-                int localRejected = 0;
-                float localMaxDist = 0f;
-                int rowBase = row * res;
-                for (int x = 0; x < res; x++) {
-                    int idx = rowBase + x;
-                    var sample = samples[idx];
-                    if (sample.triangleIndex < 0) continue;
-                    int t = sample.triangleIndex;
-                    int ti0 = targetTris[t * 3];
-                    int ti1 = targetTris[t * 3 + 1];
-                    int ti2 = targetTris[t * 3 + 2];
-                    Vector3 tp = targetVerts[ti0] * sample.wa
-                               + targetVerts[ti1] * sample.wb
-                               + targetVerts[ti2] * sample.wc;
+            for (int sy = 0; sy < samplesPerAxis; sy++) {
+                for (int sx = 0; sx < samplesPerAxis; sx++) {
+                    float offsetX = (sx + 0.5f) / samplesPerAxis;
+                    float offsetY = (sy + 0.5f) / samplesPerAxis;
+                    var samples = RasterizeTargetUv(targetUvs, targetTris, res, offsetX, offsetY);
+                    float passProgress = (sy * samplesPerAxis + sx) / (float)sampleCount;
+                    opt.onProgress?.Invoke(0.15f + passProgress * 0.75f);
 
-                    var hit = QueryClosest(grid, sourceVerts, sourceTris, tp);
-                    if (hit.triangleIndex < 0) continue;
-                    if (hit.distance > localMaxDist) localMaxDist = hit.distance;
-                    if (opt.maxDistance > 0f && hit.distance > opt.maxDistance) {
-                        localRejected++;
-                        continue;
-                    }
-                    int si0 = sourceTris[hit.triangleIndex * 3];
-                    int si1 = sourceTris[hit.triangleIndex * 3 + 1];
-                    int si2 = sourceTris[hit.triangleIndex * 3 + 2];
-                    Vector2 srcUv = sourceUvs[si0] * hit.wa
-                                  + sourceUvs[si1] * hit.wb
-                                  + sourceUvs[si2] * hit.wc;
-                    outputPixels[idx] = SampleBilinearClamp32(srcPixels, srcW, srcH, srcUv.x, srcUv.y);
-                    localCovered++;
+                    // Parallel core. Each row writes a disjoint stripe of the
+                    // output buffer and reads only the immutable inputs, so we
+                    // need no per-pixel synchronisation. Per-row stats merge
+                    // through a single lock once per row.
+                    Parallel.For(0, res, row => {
+                        int localRejected = 0;
+                        float localMaxDist = 0f;
+                        int rowBase = row * res;
+                        for (int x = 0; x < res; x++) {
+                            int idx = rowBase + x;
+                            var sample = samples[idx];
+                            if (sample.triangleIndex < 0) continue;
+                            int t = sample.triangleIndex;
+                            int ti0 = targetTris[t * 3];
+                            int ti1 = targetTris[t * 3 + 1];
+                            int ti2 = targetTris[t * 3 + 2];
+                            Vector3 tp = targetVerts[ti0] * sample.wa
+                                       + targetVerts[ti1] * sample.wb
+                                       + targetVerts[ti2] * sample.wc;
+
+                            var hit = QueryClosest(grid, sourceVerts, sourceTris, tp);
+                            if (hit.triangleIndex < 0) continue;
+                            if (hit.distance > localMaxDist) localMaxDist = hit.distance;
+                            if (opt.maxDistance > 0f && hit.distance > opt.maxDistance) {
+                                localRejected++;
+                                continue;
+                            }
+                            int si0 = sourceTris[hit.triangleIndex * 3];
+                            int si1 = sourceTris[hit.triangleIndex * 3 + 1];
+                            int si2 = sourceTris[hit.triangleIndex * 3 + 2];
+                            Vector2 srcUv = sourceUvs[si0] * hit.wa
+                                          + sourceUvs[si1] * hit.wb
+                                          + sourceUvs[si2] * hit.wc;
+                            var color = SampleBilinearClamp32(srcPixels, srcW, srcH, srcUv.x, srcUv.y);
+                            sumR[idx] = (ushort)(sumR[idx] + color.r);
+                            sumG[idx] = (ushort)(sumG[idx] + color.g);
+                            sumB[idx] = (ushort)(sumB[idx] + color.b);
+                            sumA[idx] = (ushort)(sumA[idx] + color.a);
+                            acceptedSamples[idx]++;
+                        }
+                        if (localRejected > 0 || localMaxDist > 0f) {
+                            lock (statsLock) {
+                                rejectedCounter += localRejected;
+                                if (localMaxDist > maxDistObserved) maxDistObserved = localMaxDist;
+                            }
+                        }
+                    });
                 }
-                if (localCovered > 0 || localRejected > 0 || localMaxDist > 0f) {
-                    lock (statsLock) {
-                        coveredCounter += localCovered;
-                        rejectedCounter += localRejected;
-                        if (localMaxDist > maxDistObserved) maxDistObserved = localMaxDist;
-                    }
+            }
+
+            int coveredCounter = 0;
+            var validPixels = new bool[outputPixels.Length];
+            for (int i = 0; i < outputPixels.Length; i++) {
+                int accepted = acceptedSamples[i];
+                if (accepted > 0) {
+                    coveredCounter++;
+                    validPixels[i] = true;
+                    int fallbackSamples = sampleCount - accepted;
+                    outputPixels[i] = new Color32(
+                        AverageByte(sumR[i] + fallback32.r * fallbackSamples, sampleCount),
+                        AverageByte(sumG[i] + fallback32.g * fallbackSamples, sampleCount),
+                        AverageByte(sumB[i] + fallback32.b * fallbackSamples, sampleCount),
+                        AverageByte(sumA[i] + fallback32.a * fallbackSamples, sampleCount));
+                } else {
+                    outputPixels[i] = fallback32;
                 }
-            });
+            }
+
+            int paddedTexels = DilateUvIslandPadding(outputPixels, validPixels, res, paddingPixels);
 
             opt.onProgress?.Invoke(0.95f);
 
@@ -600,10 +655,95 @@ namespace WhyKnot.AvatarQol.Tools {
             return new TransferResult {
                 output              = output,
                 coveredTexels       = coveredCounter,
-                totalTexels         = samples.Length,
+                totalTexels         = outputPixels.Length,
                 rejectedByDistance  = rejectedCounter,
                 maxObservedDistance = maxDistObserved,
+                supersample         = samplesPerAxis,
+                paddingPixels       = paddingPixels,
+                paddedTexels        = paddedTexels,
             };
+        }
+
+        private static byte AverageByte(int numerator, int denominator) {
+            if (denominator <= 1) return (byte)Mathf.Clamp(numerator, 0, 255);
+            return (byte)Mathf.Clamp((numerator + denominator / 2) / denominator, 0, 255);
+        }
+
+        internal static int DilateUvIslandPadding(
+                Color32[] pixels, bool[] validPixels, int resolution, int paddingPixels) {
+            if (pixels == null || validPixels == null) return 0;
+            if (pixels.Length != validPixels.Length) {
+                throw new ArgumentException("pixels and validPixels must have the same length");
+            }
+            if (resolution <= 0 || pixels.Length != resolution * resolution) {
+                throw new ArgumentException("resolution does not match pixel buffer length");
+            }
+            if (paddingPixels <= 0) return 0;
+
+            int totalAdded = 0;
+            var currentPixels = pixels;
+            var currentValid = validPixels;
+            var nextPixels = new Color32[pixels.Length];
+            var nextValid = new bool[validPixels.Length];
+
+            for (int iter = 0; iter < paddingPixels; iter++) {
+                Array.Copy(currentPixels, nextPixels, currentPixels.Length);
+                Array.Copy(currentValid, nextValid, currentValid.Length);
+                int addedThisPass = 0;
+
+                Parallel.For(0, resolution, () => 0, (y, state, localAdded) => {
+                    int rowBase = y * resolution;
+                    for (int x = 0; x < resolution; x++) {
+                        int idx = rowBase + x;
+                        if (currentValid[idx]) continue;
+
+                        int count = 0;
+                        int r = 0, g = 0, b = 0, a = 0;
+                        for (int oy = -1; oy <= 1; oy++) {
+                            int ny = y + oy;
+                            if (ny < 0 || ny >= resolution) continue;
+                            int nRow = ny * resolution;
+                            for (int ox = -1; ox <= 1; ox++) {
+                                if (ox == 0 && oy == 0) continue;
+                                int nx = x + ox;
+                                if (nx < 0 || nx >= resolution) continue;
+                                int nIdx = nRow + nx;
+                                if (!currentValid[nIdx]) continue;
+                                var c = currentPixels[nIdx];
+                                r += c.r; g += c.g; b += c.b; a += c.a;
+                                count++;
+                            }
+                        }
+                        if (count == 0) continue;
+
+                        nextPixels[idx] = new Color32(
+                            AverageByte(r, count),
+                            AverageByte(g, count),
+                            AverageByte(b, count),
+                            AverageByte(a, count));
+                        nextValid[idx] = true;
+                        localAdded++;
+                    }
+                    return localAdded;
+                }, localAdded => Interlocked.Add(ref addedThisPass, localAdded));
+
+                if (addedThisPass == 0) break;
+                totalAdded += addedThisPass;
+
+                var pixelSwap = currentPixels;
+                currentPixels = nextPixels;
+                nextPixels = pixelSwap;
+
+                var validSwap = currentValid;
+                currentValid = nextValid;
+                nextValid = validSwap;
+            }
+
+            if (!ReferenceEquals(currentPixels, pixels)) {
+                Array.Copy(currentPixels, pixels, pixels.Length);
+                Array.Copy(currentValid, validPixels, validPixels.Length);
+            }
+            return totalAdded;
         }
 
         // -----------------------------------------------------------------
