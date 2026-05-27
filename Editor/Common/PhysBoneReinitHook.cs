@@ -11,18 +11,20 @@
 // a documented bug with int.MaxValue / int.MinValue (Unity Issue Tracker,
 // reproducible through 2021.1; status in 2022.3 unverified).
 //
-// Reflection is used to call InitTransforms because the VRCPhysBone type
-// is defined in VRC.SDK3.Dynamics.PhysBone which we depend on, and the
-// reflection target is a public method on a public type -- the only risk
-// is the method being renamed across SDK versions, in which case we fail
-// silent and PhysBones stay in their pre-swap state (no crash).
+// The SDK currently requires InitTransforms(true), followed by parameter
+// and shape refreshes, to rebuild the runtime state after mesh / transform
+// changes in play mode or during upload preprocessing.
 
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using VRC.SDKBase.Editor.BuildPipeline;
+
+#if VRC_SDK_VRCSDK3
+using VRC.Dynamics;
+using VRC.SDK3.Dynamics.PhysBone.Components;
+#endif
 
 namespace WhyKnot.AvatarQol.Intent {
 
@@ -32,8 +34,6 @@ namespace WhyKnot.AvatarQol.Intent {
         public int callbackOrder => 10000;
 
         private static readonly HashSet<GameObject> _pendingRoots = new HashSet<GameObject>();
-        private static MethodInfo _initTransformsMethod;
-        private static bool _initTransformsProbed;
 
         static PhysBoneReinitHook() {
             // Unsubscribe-then-subscribe so repeated static-ctor runs (every
@@ -67,49 +67,39 @@ namespace WhyKnot.AvatarQol.Intent {
         }
 
         private static void ReinitUnderRoot(GameObject root) {
+#if VRC_SDK_VRCSDK3
             if (root == null) return;
-            EnsureInitTransformsProbed();
-            if (_initTransformsMethod == null) return;
 
-            var components = root.GetComponentsInChildren(typeof(MonoBehaviour), true);
-            foreach (var c in components) {
-                if (c == null) continue;
-                var t = c.GetType();
-                if (!IsVrcPhysBoneType(t)) continue;
+            foreach (var physBone in root.GetComponentsInChildren<VRCPhysBone>(true)) {
+                if (physBone == null) continue;
                 try {
-                    _initTransformsMethod.Invoke(c, null);
+                    physBone.InitTransforms(true);
+                    physBone.InitParameters();
                 } catch (Exception ex) {
-                    AvatarQolLogger.Instance.Warning($"PhysBone reinit on {c.name} failed: {ex.Message}");
+                    AvatarQolLogger.Instance.Warning($"PhysBone reinit on {physBone.name} failed: {ex.Message}");
                 }
             }
-        }
 
-        private static bool IsVrcPhysBoneType(Type t) {
-            if (t == null) return false;
-            // Walk up the hierarchy so both VRCPhysBone and any subclasses are
-            // matched. Match by simple-name to avoid a hard reference to the
-            // PhysBone assembly's exact type identity (the assembly IS a
-            // dependency, but the type name is the stable contract).
-            for (var cur = t; cur != null && cur != typeof(object); cur = cur.BaseType) {
-                if (cur.Name == "VRCPhysBoneBase" || cur.Name == "VRCPhysBone") return true;
+            foreach (var collider in root.GetComponentsInChildren<VRCPhysBoneColliderBase>(true)) {
+                if (collider == null) continue;
+                try {
+                    collider.UpdateShape();
+                } catch (Exception ex) {
+                    AvatarQolLogger.Instance.Warning($"PhysBone collider refresh on {collider.name} failed: {ex.Message}");
+                }
             }
-            return false;
-        }
 
-        private static void EnsureInitTransformsProbed() {
-            if (_initTransformsProbed) return;
-            _initTransformsProbed = true;
-
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) {
-                Type baseType;
-                try { baseType = asm.GetType("VRC.Dynamics.VRCPhysBoneBase", false); }
-                catch { continue; }
-                if (baseType == null) continue;
-
-                _initTransformsMethod = baseType.GetMethod("InitTransforms",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (_initTransformsMethod != null) return;
+            foreach (var contact in root.GetComponentsInChildren<ContactBase>(true)) {
+                if (contact == null) continue;
+                try {
+                    contact.UpdateShape();
+                } catch (Exception ex) {
+                    AvatarQolLogger.Instance.Warning($"Contact refresh on {contact.name} failed: {ex.Message}");
+                }
             }
+#else
+            _ = root;
+#endif
         }
     }
 }
