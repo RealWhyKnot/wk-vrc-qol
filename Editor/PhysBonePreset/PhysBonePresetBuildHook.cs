@@ -63,11 +63,7 @@ namespace WhyKnot.AvatarQol.Tools {
             _activeUploadAvatar = avatarGameObject;
 
             foreach (var intent in intents) {
-                var result = PhysBonePresetApplier.ApplyNonDestructive(
-                    intent.bones, intent.presetId,
-                    intent.tweakPull, intent.tweakSpring, intent.tweakStiff,
-                    intent.tweakGravity, intent.tweakRadius,
-                    session);
+                var result = PhysBonePresetApplier.ApplyNonDestructive(intent, session);
                 LogResult($"upload ({avatarGameObject.name}, {intent.name})", result, intent.verboseLog);
             }
 
@@ -131,11 +127,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 var root = kv.Key;
                 var session = new AvatarIntentSession();
                 foreach (var intent in kv.Value) {
-                    var result = PhysBonePresetApplier.ApplyNonDestructive(
-                        intent.bones, intent.presetId,
-                        intent.tweakPull, intent.tweakSpring, intent.tweakStiff,
-                        intent.tweakGravity, intent.tweakRadius,
-                        session);
+                    var result = PhysBonePresetApplier.ApplyNonDestructive(intent, session);
                     LogResult($"play mode ({root.name}, {intent.name})", result, intent.verboseLog);
                 }
                 if (!session.HasChanges) {

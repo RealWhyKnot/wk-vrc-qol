@@ -33,6 +33,7 @@ using UnityEditor;
 using UnityEngine;
 using VRC.SDKBase.Editor.BuildPipeline;
 using WhyKnot.AvatarQol.Components;
+using WhyKnot.AvatarQol.Intent;
 using WhyKnot.AvatarQol.Tools;
 using WhyKnot.AvatarQol.Internal.Utilities;
 
@@ -248,8 +249,21 @@ namespace WhyKnot.AvatarQol.WeightFixes {
                 log?.AppendLine($"WeightFix verbose ({contextLabel})");
                 log?.AppendLine($"  weightFloor={p.WeightFloor:F4}, centerMargin={p.CenterMargin:F3}, scanCenterBand={p.ScanCenterBand}, centerCrossSideFloor={p.CenterCrossSideFloor:F3}");
 
-                var detect = WeightCrossSideDetector.Detect(renderer, sideMap, p, log);
-                if (detect.Issues.Count == 0) {
+                string signature = IntentPrecomputeUtility.BuildWeightFixSignature(
+                    intent,
+                    animator,
+                    renderer,
+                    p);
+                if (!WeightFixPrecomputeCache.TryLoad(intent, signature, out var detectedIssues)) {
+                    var detect = WeightCrossSideDetector.Detect(renderer, sideMap, p, log);
+                    detectedIssues = detect.Issues;
+                    WeightFixPrecomputeCache.Store(intent, signature, detectedIssues);
+                    log?.AppendLine($"  precompute cache rebuilt: {detectedIssues.Count} issue(s).");
+                } else {
+                    log?.AppendLine($"  precompute cache reused: {detectedIssues.Count} issue(s).");
+                }
+
+                if (detectedIssues.Count == 0) {
                     if (log != null) {
                         log.AppendLine($"  no cross-side weights found; mesh left untouched.");
                         AvatarQolLogger.Instance.Info(log.ToString());
@@ -257,7 +271,7 @@ namespace WhyKnot.AvatarQol.WeightFixes {
                     summary.IntentsProcessed++;
                     continue;
                 }
-                summary.IssuesFound += detect.Issues.Count;
+                summary.IssuesFound += detectedIssues.Count;
 
                 // Clone now so the session owns the original. Capture the
                 // renderer before assigning so Dispose can put back the
@@ -272,7 +286,7 @@ namespace WhyKnot.AvatarQol.WeightFixes {
                 }
 
                 var fixResult = new WeightFixer.FixResult();
-                var fixerIssues = detect.Issues
+                var fixerIssues = detectedIssues
                     .Select(i => new WeightFixer.IssueRef {
                         Renderer = i.Renderer,
                         VertexIndex = i.VertexIndex,

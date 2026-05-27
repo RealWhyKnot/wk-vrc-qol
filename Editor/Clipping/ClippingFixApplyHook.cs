@@ -145,11 +145,24 @@ namespace WhyKnot.AvatarQol.Clipping {
                 StringBuilder log = intent.verboseLog ? new StringBuilder() : null;
                 log?.AppendLine($"clipping fix verbose ({contextLabel})");
                 log?.AppendLine($"  target={renderer.name}, comparisons={intent.comparisonRenderers?.Count ?? 0}, includePhysBoneMotion={settings.IncludePhysBoneMotion}");
+                string signature = IntentPrecomputeUtility.BuildClippingSignature(
+                    intent,
+                    renderer,
+                    intent.comparisonRenderers,
+                    settings);
+                if (!ClippingFixPrecomputeCache.TryLoad(intent, signature, out var initialIssues)) {
+                    initialIssues = ClippingFixer.Scan(renderer, intent.comparisonRenderers, settings, log);
+                    ClippingFixPrecomputeCache.Store(intent, signature, initialIssues);
+                    log?.AppendLine($"  precompute cache rebuilt: {initialIssues.Count} warning(s).");
+                } else {
+                    log?.AppendLine($"  precompute cache reused: {initialIssues.Count} warning(s).");
+                }
                 var result = ClippingFixer.ApplyNonDestructive(
                     renderer,
                     intent.comparisonRenderers,
                     settings,
-                    session);
+                    session,
+                    initialIssues);
                 summary.IntentsProcessed++;
                 summary.WarningsFound += result.IssuesFound;
                 summary.VerticesMoved += result.VerticesMoved;

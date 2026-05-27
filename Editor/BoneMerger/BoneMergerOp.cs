@@ -67,14 +67,57 @@ namespace WhyKnot.AvatarQol.BoneMerger {
         public static Result ApplyNonDestructive(
                 Animator animator,
                 IList<BoneMergerPair> pairs,
-                AvatarIntentSession session) {
+                AvatarIntentSession session,
+                IList<BoneMergerPrecomputedRenderer> precomputedRenderers = null) {
             // Non-destructive path runs against an in-memory mesh clone tracked
             // by the session, and never touches bone GameObjects. The deletion
             // / reparent flags from the intent component are deliberately
             // ignored here -- those are scene mutations that belong to the
             // destructive window flow.
             return Apply(animator, pairs, deleteMergedBones: false, reparentChildren: false,
-                useUndo: false, session: session, undoLabel: null);
+                useUndo: false, session: session, undoLabel: null, precomputedRenderers: precomputedRenderers);
+        }
+
+        public static List<BoneMergerPrecomputedRenderer> PrecomputeRenderers(
+                Animator animator,
+                IList<BoneMergerPair> pairs,
+                out string error) {
+
+            error = null;
+            var output = new List<BoneMergerPrecomputedRenderer>();
+            if (animator == null) {
+                error = "Pick an Animator first.";
+                return output;
+            }
+
+            var validPairs = ValidPairs(pairs);
+            if (validPairs.Count == 0) {
+                error = "No valid pairs to apply.";
+                return output;
+            }
+            if (!ValidatePairs(validPairs, out error)) return output;
+
+            var renderers = animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var renderer in renderers) {
+                if (renderer == null) continue;
+                var bones = renderer.bones;
+                if (bones == null || bones.Length == 0) continue;
+                var matched = new List<BoneMergerPair>();
+                foreach (var pair in validPairs) {
+                    if (IndexOf(bones, pair.mergeFrom) < 0) continue;
+                    if (IndexOf(bones, pair.mergeInto) < 0) continue;
+                    matched.Add(new BoneMergerPair {
+                        mergeFrom = pair.mergeFrom,
+                        mergeInto = pair.mergeInto,
+                    });
+                }
+                if (matched.Count == 0) continue;
+                output.Add(new BoneMergerPrecomputedRenderer {
+                    renderer = renderer,
+                    pairs = matched,
+                });
+            }
+            return output;
         }
 
         private static Result Apply(
@@ -84,7 +127,8 @@ namespace WhyKnot.AvatarQol.BoneMerger {
                 bool reparentChildren,
                 bool useUndo,
                 AvatarIntentSession session,
-                string undoLabel) {
+                string undoLabel,
+                IList<BoneMergerPrecomputedRenderer> precomputedRenderers = null) {
 
             var result = new Result();
             if (animator == null) {
@@ -93,9 +137,7 @@ namespace WhyKnot.AvatarQol.BoneMerger {
                 return result;
             }
 
-            var validPairs = pairs == null
-                ? new List<BoneMergerPair>()
-                : pairs.Where(p => p != null && p.mergeFrom != null && p.mergeInto != null && p.mergeFrom != p.mergeInto).ToList();
+            var validPairs = ValidPairs(pairs);
             if (validPairs.Count == 0) {
                 result.Summary = "No valid pairs to apply.";
                 result.ConfigurationError = true;
@@ -108,8 +150,11 @@ namespace WhyKnot.AvatarQol.BoneMerger {
                 return result;
             }
 
-            var renderers = animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            if (renderers.Length == 0) {
+            var cachedByRenderer = BuildCachedRendererMap(precomputedRenderers);
+            var renderers = cachedByRenderer != null
+                ? cachedByRenderer.Keys.ToArray()
+                : animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            if (renderers.Length == 0 && cachedByRenderer == null) {
                 result.Summary = "The picked Animator has no SkinnedMeshRenderers underneath.";
                 result.ConfigurationError = true;
                 return result;
@@ -118,7 +163,7 @@ namespace WhyKnot.AvatarQol.BoneMerger {
             int undoGroup = useUndo ? Undo.GetCurrentGroup() : -1;
             if (useUndo) Undo.SetCurrentGroupName(undoLabel);
 
-            var perPairFlaggedRenderers = new Dictionary<BoneMergerPair, int>();
+            var matchedPairKeys = new HashSet<string>();
 
             try {
                 foreach (var renderer in renderers) {
@@ -128,15 +173,18 @@ namespace WhyKnot.AvatarQol.BoneMerger {
                         result.Detail.Add($"SKIP {RendererPath(renderer)} -- mesh not readable. Enable Read/Write on the model importer.");
                         continue;
                     }
+                    var rendererPairs = validPairs;
+                    if (cachedByRenderer != null) {
+                        if (!cachedByRenderer.TryGetValue(renderer, out rendererPairs) || rendererPairs.Count == 0) continue;
+                    }
                     var rendererResult = MergeOnRenderer(
-                        renderer, validPairs, useUndo, session,
+                        renderer, rendererPairs, useUndo, session,
                         result.Detail, result.ClonedPaths, ref result.MeshesCloned);
                     if (rendererResult.RedirectsApplied > 0) {
                         result.RenderersTouched++;
                         result.WeightsRedirected += rendererResult.RedirectsApplied;
                         foreach (var pair in rendererResult.PairsThatMatched) {
-                            perPairFlaggedRenderers.TryGetValue(pair, out var n);
-                            perPairFlaggedRenderers[pair] = n + 1;
+                            matchedPairKeys.Add(PairKey(pair));
                         }
                         result.Detail.Add($"OK   {RendererPath(renderer)} -- redirected {rendererResult.RedirectsApplied} weight slot(s){(rendererResult.WasCloned ? " (cloned mesh)" : "")}.");
                     }
@@ -165,7 +213,7 @@ namespace WhyKnot.AvatarQol.BoneMerger {
 
                 var unusedPairs = new List<string>();
                 foreach (var pair in validPairs) {
-                    if (!perPairFlaggedRenderers.ContainsKey(pair)) {
+                    if (!matchedPairKeys.Contains(PairKey(pair))) {
                         unusedPairs.Add($"{NameOrDestroyed(pair.mergeFrom)} -> {NameOrDestroyed(pair.mergeInto)}");
                     }
                 }
@@ -377,6 +425,31 @@ namespace WhyKnot.AvatarQol.BoneMerger {
                 }
             }
             return true;
+        }
+
+        private static List<BoneMergerPair> ValidPairs(IList<BoneMergerPair> pairs) {
+            return pairs == null
+                ? new List<BoneMergerPair>()
+                : pairs.Where(p => p != null && p.mergeFrom != null && p.mergeInto != null && p.mergeFrom != p.mergeInto).ToList();
+        }
+
+        private static Dictionary<SkinnedMeshRenderer, List<BoneMergerPair>> BuildCachedRendererMap(
+                IList<BoneMergerPrecomputedRenderer> cached) {
+
+            if (cached == null) return null;
+            var map = new Dictionary<SkinnedMeshRenderer, List<BoneMergerPair>>();
+            foreach (var entry in cached) {
+                if (entry == null || entry.renderer == null || entry.pairs == null || entry.pairs.Count == 0) continue;
+                var pairs = ValidPairs(entry.pairs);
+                if (pairs.Count == 0) continue;
+                map[entry.renderer] = pairs;
+            }
+            return map;
+        }
+
+        private static string PairKey(BoneMergerPair pair) {
+            if (pair == null || pair.mergeFrom == null || pair.mergeInto == null) return "";
+            return pair.mergeFrom.GetInstanceID().ToString() + "->" + pair.mergeInto.GetInstanceID().ToString();
         }
 
         private static string BuildSummary(int renderersTouched, int weightsRedirected, int meshesCloned,

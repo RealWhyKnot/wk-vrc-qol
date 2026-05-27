@@ -91,6 +91,7 @@ namespace WhyKnot.AvatarQol.Tools {
             intent.tweakStiff = _tweakStiff;
             intent.tweakGravity = _tweakGravity;
             intent.tweakRadius = _tweakRadius;
+            PhysBonePresetApplier.TryRefreshPrecompute(intent, out _);
             EditorUtility.SetDirty(intent);
 
             Undo.CollapseUndoOperations(group);

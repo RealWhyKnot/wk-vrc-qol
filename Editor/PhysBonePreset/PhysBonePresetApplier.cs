@@ -110,7 +110,73 @@ namespace WhyKnot.AvatarQol.Tools {
                 result.ConfigurationError = true;
                 return result;
             }
+            return SpawnNonDestructivePlan(plan, session);
+#endif
+        }
 
+        public static Result ApplyNonDestructive(WhyKnotPhysBonePresetIntent intent, AvatarIntentSession session) {
+            var result = new Result();
+#if !VRC_SDK_VRCSDK3
+            result.Summary = "VRChat SDK 3 (PhysBone) is not installed.";
+            result.ConfigurationError = true;
+            return result;
+#else
+            if (intent == null) {
+                result.Summary = "No PhysBone preset intent supplied.";
+                result.ConfigurationError = true;
+                return result;
+            }
+            if (session == null) {
+                result.Summary = "Internal error: no session supplied.";
+                result.ConfigurationError = true;
+                return result;
+            }
+
+            string signature = IntentPrecomputeUtility.BuildPhysBonePresetSignature(intent);
+            PhysBonePlan plan;
+            string error;
+            if (IntentPrecomputeUtility.HasValidPhysBonePresetCache(intent, signature)
+                    && TryBuildPlanFromCache(intent.precomputedPlan, out plan, out error)) {
+                return SpawnNonDestructivePlan(plan, session);
+            }
+
+            if (!TryBuildPlan(intent.bones, intent.presetId,
+                              intent.tweakPull, intent.tweakSpring, intent.tweakStiff,
+                              intent.tweakGravity, intent.tweakRadius,
+                              out plan, out error)) {
+                result.Summary = error;
+                result.ConfigurationError = true;
+                return result;
+            }
+            StorePrecompute(intent, signature, plan);
+            return SpawnNonDestructivePlan(plan, session);
+#endif
+        }
+
+        internal static bool TryRefreshPrecompute(WhyKnotPhysBonePresetIntent intent, out string error) {
+            error = null;
+            if (intent == null) {
+                error = "No PhysBone preset intent supplied.";
+                return false;
+            }
+            if (!TryBuildPlan(intent.bones, intent.presetId,
+                              intent.tweakPull, intent.tweakSpring, intent.tweakStiff,
+                              intent.tweakGravity, intent.tweakRadius,
+                              out var plan, out error)) {
+                return false;
+            }
+            string signature = IntentPrecomputeUtility.BuildPhysBonePresetSignature(intent);
+            StorePrecompute(intent, signature, plan);
+            return true;
+        }
+
+        private static Result SpawnNonDestructivePlan(PhysBonePlan plan, AvatarIntentSession session) {
+            var result = new Result();
+#if !VRC_SDK_VRCSDK3
+            result.Summary = "VRChat SDK 3 (PhysBone) is not installed.";
+            result.ConfigurationError = true;
+            return result;
+#else
             // Step 1: spawn collider GameObjects + components. Track the
             // holder GameObject through session.Adopt so Dispose destroys
             // the GameObject (which sweeps up the component too).
@@ -151,7 +217,7 @@ namespace WhyKnot.AvatarQol.Tools {
 #endif
         }
 
-        private static bool TryBuildPlan(IList<Transform> bones, string presetId,
+        internal static bool TryBuildPlan(IList<Transform> bones, string presetId,
                                          float pullMult, float springMult, float stiffMult,
                                          float gravityMult, float radiusMult,
                                          out PhysBonePlan plan, out string error) {
@@ -189,6 +255,137 @@ namespace WhyKnot.AvatarQol.Tools {
                 return false;
             }
             ApplyTweaks(plan, pullMult, springMult, stiffMult, gravityMult, radiusMult);
+            return true;
+        }
+
+        private static void StorePrecompute(
+                WhyKnotPhysBonePresetIntent intent,
+                string signature,
+                PhysBonePlan plan) {
+
+            if (intent == null || plan == null) return;
+            intent.precomputeSignature = signature;
+            intent.precomputeVersion = IntentPrecomputeUtility.PhysBonePresetVersion;
+            intent.precomputedPlan = ToCache(plan);
+            EditorUtility.SetDirty(intent);
+        }
+
+        private static PhysBonePresetPrecomputedPlan ToCache(PhysBonePlan plan) {
+            var cache = new PhysBonePresetPrecomputedPlan {
+                presetId = plan.PresetId,
+                presetDisplayName = plan.PresetDisplayName,
+            };
+            foreach (var spec in plan.PhysBones) {
+                if (spec == null) continue;
+                cache.physBones.Add(new PhysBonePresetPrecomputedPhysBone {
+                    root = spec.Root,
+                    ignoreTransforms = new List<Transform>(spec.IgnoreTransforms),
+                    colliderRefs = new List<int>(spec.ColliderRefs),
+                    pull = spec.Pull,
+                    spring = spec.Spring,
+                    stiffness = spec.Stiffness,
+                    gravity = spec.Gravity,
+                    gravityFalloff = spec.GravityFalloff,
+                    immobile = spec.Immobile,
+                    immobileType = (int)spec.ImmobileType,
+                    radius = spec.Radius,
+                    allowCollision = (int)spec.AllowCollision,
+                    allowGrabbing = (int)spec.AllowGrabbing,
+                    allowPosing = (int)spec.AllowPosing,
+                    maxStretch = spec.MaxStretch,
+                    isAnimated = spec.IsAnimated,
+                    parameter = spec.Parameter,
+                });
+            }
+            foreach (var spec in plan.Colliders) {
+                if (spec == null) continue;
+                cache.colliders.Add(new PhysBonePresetPrecomputedCollider {
+                    name = spec.Name,
+                    attachTo = spec.AttachTo,
+                    rootTransform = spec.RootTransform,
+                    shape = (int)spec.Shape,
+                    radius = spec.Radius,
+                    height = spec.Height,
+                    position = spec.Position,
+                    eulerRotation = spec.EulerRotation,
+                    insideBounds = spec.InsideBounds,
+                });
+            }
+            return cache;
+        }
+
+        private static bool TryBuildPlanFromCache(
+                PhysBonePresetPrecomputedPlan cache,
+                out PhysBonePlan plan,
+                out string error) {
+
+            plan = null;
+            error = null;
+            if (cache == null || cache.physBones == null || cache.physBones.Count == 0) {
+                error = "Precomputed PhysBone plan is empty.";
+                return false;
+            }
+            plan = new PhysBonePlan {
+                PresetId = cache.presetId,
+                PresetDisplayName = cache.presetDisplayName,
+            };
+            if (cache.colliders != null) {
+                foreach (var spec in cache.colliders) {
+                    if (spec == null) continue;
+                    if (spec.attachTo == null) {
+                        error = "A precomputed collider target no longer exists.";
+                        plan = null;
+                        return false;
+                    }
+                    plan.Colliders.Add(new ColliderSpec {
+                        Name = string.IsNullOrEmpty(spec.name) ? "PhysBoneCollider" : spec.name,
+                        AttachTo = spec.attachTo,
+                        RootTransform = spec.rootTransform,
+                        Shape = (ColliderShape)spec.shape,
+                        Radius = spec.radius,
+                        Height = spec.height,
+                        Position = spec.position,
+                        EulerRotation = spec.eulerRotation,
+                        InsideBounds = spec.insideBounds,
+                    });
+                }
+            }
+            foreach (var spec in cache.physBones) {
+                if (spec == null) continue;
+                if (spec.root == null) {
+                    error = "A precomputed PhysBone root no longer exists.";
+                    plan = null;
+                    return false;
+                }
+                plan.PhysBones.Add(new PhysBoneSpec {
+                    Root = spec.root,
+                    IgnoreTransforms = spec.ignoreTransforms != null
+                        ? new List<Transform>(spec.ignoreTransforms)
+                        : new List<Transform>(),
+                    ColliderRefs = spec.colliderRefs != null
+                        ? new List<int>(spec.colliderRefs)
+                        : new List<int>(),
+                    Pull = spec.pull,
+                    Spring = spec.spring,
+                    Stiffness = spec.stiffness,
+                    Gravity = spec.gravity,
+                    GravityFalloff = spec.gravityFalloff,
+                    Immobile = spec.immobile,
+                    ImmobileType = (ImmobileTypeKind)spec.immobileType,
+                    Radius = spec.radius,
+                    AllowCollision = (AllowKind)spec.allowCollision,
+                    AllowGrabbing = (AllowKind)spec.allowGrabbing,
+                    AllowPosing = (AllowKind)spec.allowPosing,
+                    MaxStretch = spec.maxStretch,
+                    IsAnimated = spec.isAnimated,
+                    Parameter = spec.parameter ?? "",
+                });
+            }
+            if (plan.PhysBones.Count == 0) {
+                error = "Precomputed PhysBone plan has no live roots.";
+                plan = null;
+                return false;
+            }
             return true;
         }
 

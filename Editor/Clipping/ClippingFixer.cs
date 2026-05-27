@@ -300,7 +300,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                 SkinnedMeshRenderer targetRenderer,
                 IList<SkinnedMeshRenderer> comparisonRenderers,
                 Settings settings,
-                AvatarIntentSession session) {
+                AvatarIntentSession session,
+                IList<Issue> precomputedInitial = null) {
 
             var result = new Result();
             if (session == null) {
@@ -310,7 +311,9 @@ namespace WhyKnot.AvatarQol.Clipping {
             }
 
             settings = UnlimitedWarnings(settings);
-            var initial = Scan(targetRenderer, comparisonRenderers, settings);
+            var initial = precomputedInitial != null
+                ? precomputedInitial.Where(i => i != null).ToList()
+                : Scan(targetRenderer, comparisonRenderers, settings);
             result.IssuesFound = initial.Count;
             if (initial.Count == 0) {
                 result.Summary = "No clipping warnings to fix.";
@@ -337,7 +340,16 @@ namespace WhyKnot.AvatarQol.Clipping {
                 result.MeshesCloned = 1;
                 result.RenderersTouched = 1;
 
-                RunFixPasses(targetRenderer, comparisonRenderers, WithoutPhysBoneMotion(settings), result, useUndo: false);
+                var meshSettings = WithoutPhysBoneMotion(settings);
+                if (precomputedInitial != null) {
+                    int moved = ApplyIssuesToCurrentMesh(targetRenderer, meshInitial, useUndo: false);
+                    result.VerticesMoved += moved;
+                    if (moved > 0) result.FixPasses++;
+                    meshSettings.MaxFixPasses = Mathf.Max(0, meshSettings.MaxFixPasses - result.FixPasses);
+                }
+                if (meshSettings.MaxFixPasses > 0) {
+                    RunFixPasses(targetRenderer, comparisonRenderers, meshSettings, result, useUndo: false);
+                }
             }
             result.Summary = BuildSummary(result);
             return result;

@@ -21,6 +21,19 @@ using VRC.SDKBase;
 
 namespace WhyKnot.AvatarQol.Components {
 
+    [System.Serializable]
+    public sealed class WeightFixPrecomputedIssue {
+        public SkinnedMeshRenderer renderer;
+        public string rendererPath;
+        public int vertexIndex;
+        public Vector3 worldPosition;
+        public int vertexSide;
+        public Transform offendingBone;
+        public int boneSide;
+        public float weight;
+        public int category;
+    }
+
     [AddComponentMenu("WhyKnot/Avatar QoL/Weight Fix Intent")]
     [DisallowMultipleComponent]
     public sealed class WhyKnotWeightFixIntent : MonoBehaviour, IEditorOnly {
@@ -50,6 +63,11 @@ namespace WhyKnot.AvatarQol.Components {
 
         [Tooltip("Write per-renderer scan stats and per-issue fix actions to the WhyKnot log when this intent runs. Useful when an expected fix isn't landing in play mode.")]
         public bool verboseLog;
+
+        [HideInInspector] public string precomputeSignature;
+        [HideInInspector] public int precomputeVersion;
+        [HideInInspector] public System.Collections.Generic.List<WeightFixPrecomputedIssue> precomputedIssues =
+            new System.Collections.Generic.List<WeightFixPrecomputedIssue>();
 
         private void Reset() {
             targetRenderer = GetComponent<SkinnedMeshRenderer>();

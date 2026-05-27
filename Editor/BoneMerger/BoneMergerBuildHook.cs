@@ -74,8 +74,12 @@ namespace WhyKnot.AvatarQol.BoneMerger {
             AvatarIntentSessionState.SetUploadActive(true);
             var session = new AvatarIntentSession();
             _activeUploadAvatar = avatarGameObject;
-            var result = BoneMergerOp.ApplyNonDestructive(animator, intent.pairs, session);
+            var plan = EnsurePrecompute(intent, animator, out bool cacheRebuilt);
+            var result = BoneMergerOp.ApplyNonDestructive(animator, intent.pairs, session, plan);
             LogResult($"upload ({avatarGameObject.name})", result, intent.verboseLog);
+            if (intent.verboseLog && cacheRebuilt) {
+                AvatarQolLogger.Instance.Info($"BoneMerger upload ({avatarGameObject.name}): precompute cache rebuilt for {plan.Count} renderer(s).");
+            }
 
             if (!session.HasChanges) {
                 session.Dispose();
@@ -146,8 +150,12 @@ namespace WhyKnot.AvatarQol.BoneMerger {
                 }
 
                 var session = new AvatarIntentSession();
-                var result = BoneMergerOp.ApplyNonDestructive(animator, intent.pairs, session);
+                var plan = EnsurePrecompute(intent, animator, out bool cacheRebuilt);
+                var result = BoneMergerOp.ApplyNonDestructive(animator, intent.pairs, session, plan);
                 LogResult($"play mode ({root.name})", result, intent.verboseLog);
+                if (intent.verboseLog && cacheRebuilt) {
+                    AvatarQolLogger.Instance.Info($"BoneMerger play mode ({root.name}): precompute cache rebuilt for {plan.Count} renderer(s).");
+                }
 
                 if (!session.HasChanges) {
                     session.Dispose();
@@ -175,6 +183,28 @@ namespace WhyKnot.AvatarQol.BoneMerger {
         private static Transform TopLevel(Transform transform) {
             while (transform != null && transform.parent != null) transform = transform.parent;
             return transform;
+        }
+
+        private static List<BoneMergerPrecomputedRenderer> EnsurePrecompute(
+                WhyKnotBoneMergerIntent intent,
+                Animator animator,
+                out bool rebuilt) {
+
+            rebuilt = false;
+            string signature = IntentPrecomputeUtility.BuildBoneMergerSignature(intent, animator, intent != null ? intent.pairs : null);
+            if (IntentPrecomputeUtility.HasValidBoneMergerCache(intent, signature)) {
+                return intent.precomputedRenderers;
+            }
+
+            var plan = BoneMergerOp.PrecomputeRenderers(animator, intent != null ? intent.pairs : null, out _);
+            if (intent != null) {
+                intent.precomputeSignature = signature;
+                intent.precomputeVersion = IntentPrecomputeUtility.BoneMergerVersion;
+                intent.precomputedRenderers = plan;
+                EditorUtility.SetDirty(intent);
+            }
+            rebuilt = true;
+            return plan;
         }
 
         private static void DisposeSession(Dictionary<GameObject, AvatarIntentSession> map, GameObject avatarRoot) {

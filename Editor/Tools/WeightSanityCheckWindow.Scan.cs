@@ -19,6 +19,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void Scan() {
             _issues.Clear();
+            _selectedIssueIndices.Clear();
             _nonReadableRenderers.Clear();
             _scanSummary = "";
             _lastScanLeftRightVerts = 0;

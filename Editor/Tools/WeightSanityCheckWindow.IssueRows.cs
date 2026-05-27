@@ -38,6 +38,15 @@ namespace WhyKnot.AvatarQol.Tools {
 
             using (new EditorGUILayout.HorizontalScope()) {
                 GUILayout.Space(6);
+                bool selected = _selectedIssueIndices.Contains(issueIndex);
+                bool nextSelected = EditorGUILayout.Toggle(
+                    new GUIContent(GUIContent.none.image, "Select this issue for Preview and Fix."),
+                    selected,
+                    GUILayout.Width(18));
+                if (nextSelected != selected) {
+                    if (nextSelected) _selectedIssueIndices.Add(issueIndex);
+                    else _selectedIssueIndices.Remove(issueIndex);
+                }
                 // Foldout caret on the far left toggles the per-row details.
                 bool now = EditorGUILayout.Foldout(expanded, GUIContent.none, true);
                 if (now != expanded) {

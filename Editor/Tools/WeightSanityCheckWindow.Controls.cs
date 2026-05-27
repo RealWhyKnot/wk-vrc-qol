@@ -38,7 +38,12 @@ namespace WhyKnot.AvatarQol.Tools {
                         "The Humanoid Animator at the root of your avatar. The scan walks every SkinnedMeshRenderer underneath it and uses the Humanoid bone bindings (Hips, LeftUpperLeg, RightUpperLeg) to derive the avatar's left/right axis. Generic / non-Humanoid rigs aren't supported."),
                     () => {
                         var newAnim = (Animator)EditorGUILayout.ObjectField(_animator, typeof(Animator), true);
-                        if (newAnim != _animator) { _animator = newAnim; _issues.Clear(); _scanSummary = ""; }
+                        if (newAnim != _animator) {
+                            _animator = newAnim;
+                            _issues.Clear();
+                            _selectedIssueIndices.Clear();
+                            _scanSummary = "";
+                        }
                     });
                 if (_animator != null && !_animator.isHuman) {
                     WkStyles.Notice(NoticeKind.Warning,
@@ -188,11 +193,16 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void DrawIssues() {
+            PruneSelectedIssues();
+            int selectedCount = SelectedIssueCount();
             // Header bar: "Issues (N)" + Fix all + Clear, attached to the
             // list so the action sits next to what it acts on.
             using (new EditorGUILayout.HorizontalScope()) {
                 EditorGUILayout.LabelField(
-                    new GUIContent(_issues.Count > 0 ? $"Issues ({_issues.Count})" : "Issues",
+                    new GUIContent(
+                        _issues.Count > 0 && selectedCount > 0
+                            ? $"Issues ({_issues.Count}, {selectedCount} selected)"
+                            : (_issues.Count > 0 ? $"Issues ({_issues.Count})" : "Issues"),
                         "Step 3. Each row is one suspicious bone weight on one vertex. The bracketed tag shows confidence: [humanoid] = bone is on the wrong Humanoid side, [spatial] = inferred from world position, [center] = mid-line bleed."),
                     WkStyles.SubsectionTitle);
                 GUILayout.FlexibleSpace();
@@ -200,25 +210,40 @@ namespace WhyKnot.AvatarQol.Tools {
                     && _animator != null
                     && AvatarPreviewController.SourceAvatar == _animator.gameObject;
                 using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
+                    using (new EditorGUI.DisabledScope(selectedCount == _issues.Count)) {
+                        if (GUILayout.Button(
+                                new GUIContent("Select all", "Select every issue row."),
+                                EditorStyles.miniButton, GUILayout.Width(74))) {
+                            SelectAllIssues();
+                        }
+                    }
+                    using (new EditorGUI.DisabledScope(selectedCount == 0)) {
+                        if (GUILayout.Button(
+                                new GUIContent("Clear selection", "Clear every selected issue row."),
+                                EditorStyles.miniButton, GUILayout.Width(100))) {
+                            _selectedIssueIndices.Clear();
+                        }
+                    }
                     if (WkStyles.PrimaryButtonInline(
                             new GUIContent("Save fixes as component",
-                                "Recommended for fixes you want to survive a Blender re-import. Adds (or updates) a WhyKnotWeightFixIntent component on each renderer with issues. At play-mode entry and at avatar upload, the fix re-scans the renderer's CURRENT mesh and applies corrections to an in-memory clone -- the source mesh asset is never modified, and the fix follows the mesh through topology changes."),
+                                "Recommended for fixes you want to survive a Blender re-import. Adds (or updates) a WhyKnotWeightFixIntent component on each renderer with issues using the current scan settings. Row selection is ignored for this button."),
                             GUILayout.Width(190))) {
                         SaveIssuesAsComponents();
                     }
                     using (new EditorGUI.DisabledScope(_animator == null || isPreviewing)) {
                         if (GUILayout.Button(
-                                new GUIContent("Preview",
-                                    "Non-destructive. Clone the avatar in place and apply the listed fixes to the clone so you can see the deformation without committing changes."),
-                                GUILayout.Height(28), GUILayout.Width(96))) {
-                            StartPreview(new List<DetectedIssue>(_issues));
+                                new GUIContent(selectedCount > 0 ? $"Preview selected ({selectedCount})" : "Preview",
+                                    "Non-destructive. Clone the avatar in place and apply selected fixes, or all listed fixes when nothing is selected, to the clone so you can see the deformation without committing changes."),
+                                GUILayout.Height(28), GUILayout.Width(selectedCount > 0 ? 150 : 96))) {
+                            StartPreview(SelectedOrAllIssues());
                         }
                     }
                     if (GUILayout.Button(
-                            new GUIContent($"Fix all ({_issues.Count})",
-                                "Destructive: write corrected weights into a cloned .mesh asset under Assets/AvatarQol Generated/ and rewire the renderer to the clone now. Faster feedback than the component flow but the renderer reference is lost if the FBX subasset is regenerated (Blender re-export). Prefer 'Save fixes as component' when in doubt."),
-                            GUILayout.Height(28), GUILayout.Width(110))) {
-                        FixIssues(new List<DetectedIssue>(_issues), $"{_issues.Count} issue(s)");
+                            new GUIContent(selectedCount > 0 ? $"Fix selected ({selectedCount})" : $"Fix all ({_issues.Count})",
+                                "Destructive: write corrected weights into a cloned .mesh asset under Assets/AvatarQol Generated/ and rewire the renderer to the clone now. Uses selected rows, or all rows when nothing is selected."),
+                            GUILayout.Height(28), GUILayout.Width(130))) {
+                        var selectedOrAll = SelectedOrAllIssues();
+                        FixIssues(selectedOrAll, selectedCount > 0 ? $"{selectedCount} selected issue(s)" : $"{_issues.Count} issue(s)");
                     }
                     using (new EditorGUI.DisabledScope(!isPreviewing)) {
                         if (GUILayout.Button(
@@ -232,6 +257,7 @@ namespace WhyKnot.AvatarQol.Tools {
                                 "Drop the current issue list and clear the gizmo overlay. Doesn't undo any fixes you've already applied."),
                             GUILayout.Height(28), GUILayout.Width(70))) {
                         _issues.Clear();
+                        _selectedIssueIndices.Clear();
                         _scanSummary = "";
                         _expandedIssueRows.Clear();
                         SceneView.RepaintAll();
@@ -241,6 +267,10 @@ namespace WhyKnot.AvatarQol.Tools {
 
             // Inline legend so the bracket tags aren't mystery jargon.
             if (_issues.Count > 0) {
+                if (selectedCount > 0) {
+                    WkStyles.Notice(NoticeKind.Info,
+                        $"{selectedCount} selected issue(s) will be used by Preview and Fix. Save fixes as component uses the current scan settings instead.");
+                }
                 using (new EditorGUILayout.HorizontalScope()) {
                     EditorGUILayout.LabelField("Legend:", WkStyles.Muted, GUILayout.Width(54));
                     WkStyles.BadgePill("humanoid", AvatarQolCategoryColors.Humanoid,

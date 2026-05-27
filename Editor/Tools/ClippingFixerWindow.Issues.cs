@@ -26,8 +26,8 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
                     if (WkStyles.PrimaryButtonInline(
-                            new GUIContent(selectedCount > 0 ? $"Add component ({selectedCount} selected)" : "Add fix component",
-                                "Non-destructive. Adds or updates a WhyKnotClippingFixIntent on the target mesh. If warnings are selected, only those warning sources and motion checks are saved."),
+                            new GUIContent("Add fix component",
+                                "Non-destructive. Adds or updates a WhyKnotClippingFixIntent on the target mesh using the current comparison list and scan options. Warning selection is only used by destructive apply."),
                             GUILayout.Width(190))) {
                         SaveFixAsComponent();
                     }
@@ -94,10 +94,10 @@ namespace WhyKnot.AvatarQol.Tools {
 
             if (_issues.Count > 0) {
                 string selectionText = selectedCount > 0
-                    ? $" {selectedCount} selected warning(s) will be used by Add component and destructive apply."
-                    : " With nothing selected, Add component and destructive apply use all warnings.";
+                    ? $" {selectedCount} selected warning(s) will be used by destructive apply."
+                    : " With nothing selected, destructive apply uses all warnings.";
                 WkStyles.Notice(NoticeKind.Warning,
-                    $"{_issues.Count} clipping warning(s) found.{selectionText} Add component also uses the current selection.");
+                    $"{_issues.Count} clipping warning(s) found.{selectionText} Add component saves the current settings, not selected rows.");
             }
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
@@ -245,14 +245,9 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void SaveFixAsComponent() {
             if (_targetRenderer == null || _issues.Count == 0) return;
-            var selectedIssues = SelectedOrAllWarnings();
-            int selectedCount = SelectedWarningCount();
             string msg =
                 "Add or update a Clipping Fix component on the target mesh?\n\n" +
-                "At play-mode entry and avatar upload, it re-scans this renderer's current mesh against the saved comparison mesh list. Mesh clipping warnings clone the target mesh in memory and push vertices out. PhysBone motion warnings temporarily tighten the matching PhysBone source during the run. The source mesh asset is never modified.\n\n" +
-                (selectedCount > 0
-                    ? $"The component will use only the {selectedCount} selected warning(s)."
-                    : "No warnings are selected, so the current comparison mesh list and scan options are stored.");
+                "At play-mode entry and avatar upload, it uses the saved comparison mesh list and scan options. If the target mesh, comparison meshes, PhysBone source state, or settings change, the component refreshes its precomputed warnings before applying. The source mesh asset is never modified.";
             if (!EditorUtility.DisplayDialog("Add fix component", msg, "Add component", "Cancel")) return;
 
             int undoGroup = Undo.GetCurrentGroup();
@@ -268,29 +263,35 @@ namespace WhyKnot.AvatarQol.Tools {
             intent.animator = _animator;
             if (intent.comparisonRenderers == null) intent.comparisonRenderers = new System.Collections.Generic.List<SkinnedMeshRenderer>();
             intent.comparisonRenderers.Clear();
-            foreach (var renderer in BuildSurfaceListForComponent(selectedIssues, selectedCount > 0)) {
+            foreach (var renderer in BuildSurfaceList()) {
                 if (renderer != null && renderer != _targetRenderer && !intent.comparisonRenderers.Contains(renderer)) {
                     intent.comparisonRenderers.Add(renderer);
                 }
             }
-            intent.checkSelf = selectedCount > 0
-                ? selectedIssues.Any(i => i != null && i.Kind == ClippingFixer.IssueKind.SelfIntersection)
-                : _checkSelf;
-            intent.includePhysBoneMotion = selectedCount > 0
-                ? selectedIssues.Any(i => i != null && i.Kind == ClippingFixer.IssueKind.PhysBoneMotion)
-                : _includePhysBoneMotion;
+            intent.checkSelf = _checkSelf;
+            intent.includePhysBoneMotion = _includePhysBoneMotion;
             intent.insideTolerance = _insideTolerance;
             intent.surfacePadding = _surfacePadding;
             intent.physBoneWeightFloor = _physBoneWeightFloor;
             intent.physBoneClearanceMargin = _physBoneClearanceMargin;
             intent.maxFixPasses = _maxFixPasses;
             intent.maxIssuesPerPhysBone = _maxIssuesPerPhysBone;
+
+            var cacheSettings = ClippingFixApplyHook.SettingsFromIntent(intent);
+            cacheSettings.Animator = intent.animator;
+            string signature = IntentPrecomputeUtility.BuildClippingSignature(
+                intent,
+                _targetRenderer,
+                intent.comparisonRenderers,
+                cacheSettings);
+            var precomputed = ClippingFixer.Scan(_targetRenderer, intent.comparisonRenderers, cacheSettings);
+            ClippingFixPrecomputeCache.Store(intent, signature, precomputed);
             EditorUtility.SetDirty(intent);
             Undo.CollapseUndoOperations(undoGroup);
 
             AvatarQolLogger.Instance.Info(
                 $"clipping fix component saved on {_targetRenderer.name}: " +
-                $"{intent.comparisonRenderers.Count} comparison renderer(s), checkSelf={intent.checkSelf}, includePhysBoneMotion={intent.includePhysBoneMotion}.");
+                $"{intent.comparisonRenderers.Count} comparison renderer(s), checkSelf={intent.checkSelf}, includePhysBoneMotion={intent.includePhysBoneMotion}, precomputed={precomputed.Count} warning(s).");
         }
 
         private void ApplyDestructiveFix() {
@@ -354,16 +355,5 @@ namespace WhyKnot.AvatarQol.Tools {
                 .ToList();
         }
 
-        private List<SkinnedMeshRenderer> BuildSurfaceListForComponent(
-                List<ClippingFixer.Issue> issues,
-                bool useSelectedSources) {
-            if (!useSelectedSources) return BuildSurfaceList();
-            var output = new List<SkinnedMeshRenderer>();
-            foreach (var issue in issues) {
-                if (issue == null || issue.ComparisonRenderer == null || issue.ComparisonRenderer == _targetRenderer) continue;
-                if (!output.Contains(issue.ComparisonRenderer)) output.Add(issue.ComparisonRenderer);
-            }
-            return output;
-        }
     }
 }

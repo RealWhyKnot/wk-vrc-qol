@@ -5,6 +5,7 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using WhyKnot.AvatarQol.Clipping;
+using WhyKnot.AvatarQol.Intent;
 
 #if VRC_SDK_VRCSDK3
 using VRC.SDK3.Dynamics.PhysBone.Components;
@@ -131,6 +132,41 @@ namespace WhyKnot.AvatarQol.Tests {
 
             Assert.AreEqual(0, result.VerticesMoved);
             CollectionAssert.AreEqual(before, mesh.vertices);
+        }
+
+        [Test]
+        public void ApplyNonDestructive_UsesPrecomputedIssuesForFirstPass() {
+            var body = CreateRenderer("Body", CreateCube("BodyMesh"));
+            var mesh = CreateTriangle("MovingMesh",
+                new Vector3(0f, 0f, 0f),
+                new Vector3(0.1f, 0f, 0f),
+                new Vector3(1.0f, 1.0f, 0f));
+            var target = CreateRenderer("Moving", mesh);
+            var before = mesh.vertices;
+            var warnings = ClippingFixer.Scan(target, new[] { body }, Settings(checkSelf: false));
+            var selected = warnings
+                .Where(i => i.Kind == ClippingFixer.IssueKind.ComparisonMesh && i.VertexIndex == 0)
+                .Take(1)
+                .ToList();
+            Assert.AreEqual(1, selected.Count);
+
+            var settings = Settings(checkSelf: false);
+            settings.MaxFixPasses = 1;
+            using (var session = new AvatarIntentSession()) {
+                var result = ClippingFixer.ApplyNonDestructive(
+                    target,
+                    new SkinnedMeshRenderer[0],
+                    settings,
+                    session,
+                    selected);
+
+                Assert.AreEqual(1, result.VerticesMoved);
+                Assert.AreNotSame(mesh, target.sharedMesh);
+                Assert.AreNotEqual(before[0], target.sharedMesh.vertices[0]);
+                CollectionAssert.AreEqual(before, mesh.vertices);
+            }
+
+            Assert.AreSame(mesh, target.sharedMesh);
         }
 
 #if VRC_SDK_VRCSDK3

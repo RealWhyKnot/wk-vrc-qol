@@ -116,11 +116,19 @@ namespace WhyKnot.AvatarQol.Tools {
 
             // Bucket issues by their renderer so each renderer gets one
             // component, parameterised once. We don't store the issue list
-            // on the component -- the runtime hook re-scans the renderer's
-            // CURRENT mesh at apply time, which is what makes the flow
-            // robust to Blender re-imports.
+            // on the component as a fixed selection. The component keeps a
+            // precomputed detection list and refreshes it when inputs change.
             var renderers = new HashSet<SkinnedMeshRenderer>();
-            foreach (var i in _issues) if (i.Renderer != null) renderers.Add(i.Renderer);
+            var byRenderer = new Dictionary<SkinnedMeshRenderer, List<DetectedIssue>>();
+            foreach (var i in _issues) {
+                if (i.Renderer == null) continue;
+                renderers.Add(i.Renderer);
+                if (!byRenderer.TryGetValue(i.Renderer, out var list)) {
+                    list = new List<DetectedIssue>();
+                    byRenderer[i.Renderer] = list;
+                }
+                list.Add(i);
+            }
             if (renderers.Count == 0) {
                 EditorUtility.DisplayDialog("Save fixes as component",
                     "All issues in the list reference destroyed renderers; nothing to save.", "OK");
@@ -129,12 +137,14 @@ namespace WhyKnot.AvatarQol.Tools {
 
             string msg = $"Add (or update) a WhyKnotWeightFixIntent component on " +
                          $"{renderers.Count} renderer(s)?\n\n" +
-                         "At play-mode entry and at avatar upload, each intent re-scans its " +
-                         "renderer's current mesh and applies cross-side fixes to an in-memory " +
-                         "clone. The source mesh asset is never modified.\n\n" +
+                         "At play-mode entry and at avatar upload, each intent uses its precomputed " +
+                         "issue list while the renderer mesh, bones, pose, and settings are unchanged. " +
+                         "If any input changes, it refreshes the precompute before applying fixes to " +
+                         "an in-memory clone. The source mesh asset is never modified.\n\n" +
                          "The component stores your current scan parameters (weight floor, " +
                          "centre margin, scan centre band, centre threshold) so play / build " +
-                         "produces the same set of fixes you see in this list right now.";
+                         "produces the same set of fixes you see in this list right now. Row selection " +
+                         "is ignored for the component.";
             if (!EditorUtility.DisplayDialog("Save fixes as component", msg,
                     $"Add to {renderers.Count} renderer(s)", "Cancel")) return;
 
@@ -157,6 +167,19 @@ namespace WhyKnot.AvatarQol.Tools {
                 existing.centerMargin         = _centerMargin;
                 existing.scanCenterBand       = _scanCenterBand;
                 existing.centerCrossSideFloor = _centerCrossSideFloor;
+                var parameters = new ScanParameters {
+                    WeightFloor = _weightFloor,
+                    CenterMargin = _centerMargin,
+                    ScanCenterBand = _scanCenterBand,
+                    CenterCrossSideFloor = _centerCrossSideFloor,
+                };
+                string signature = IntentPrecomputeUtility.BuildWeightFixSignature(
+                    existing,
+                    _animator,
+                    renderer,
+                    parameters);
+                byRenderer.TryGetValue(renderer, out var cachedIssues);
+                WeightFixPrecomputeCache.Store(existing, signature, cachedIssues ?? new List<DetectedIssue>());
                 EditorUtility.SetDirty(existing);
             }
             Undo.CollapseUndoOperations(undoGroup);
@@ -207,6 +230,7 @@ namespace WhyKnot.AvatarQol.Tools {
             // useful when the issue list still shows what was done.
             var fixedSet = new HashSet<DetectedIssue>(issues);
             _issues.RemoveAll(fixedSet.Contains);
+            _selectedIssueIndices.Clear();
             SceneView.RepaintAll();
 
             string clonedNote = result.MeshesCloned > 0
@@ -220,6 +244,32 @@ namespace WhyKnot.AvatarQol.Tools {
                 $"{result.Mirrored} mirrored, {result.Zeroed} zeroed + renormalised, " +
                 $"across {result.RenderersTouched} renderer(s).{clonedNote}{skipNote}");
             AssetDatabase.SaveAssets();
+        }
+
+        private int SelectedIssueCount() {
+            PruneSelectedIssues();
+            return _selectedIssueIndices.Count;
+        }
+
+        private void PruneSelectedIssues() {
+            if (_selectedIssueIndices.Count == 0) return;
+            _selectedIssueIndices.RemoveWhere(i => i < 0 || i >= _issues.Count);
+        }
+
+        private void SelectAllIssues() {
+            _selectedIssueIndices.Clear();
+            for (int i = 0; i < _issues.Count; i++) _selectedIssueIndices.Add(i);
+        }
+
+        private List<DetectedIssue> SelectedOrAllIssues() {
+            PruneSelectedIssues();
+            if (_selectedIssueIndices.Count == 0) return new List<DetectedIssue>(_issues);
+            return _selectedIssueIndices
+                .OrderBy(i => i)
+                .Where(i => i >= 0 && i < _issues.Count)
+                .Select(i => _issues[i])
+                .Where(i => i != null)
+                .ToList();
         }
     }
 }

@@ -356,11 +356,14 @@ namespace WhyKnot.AvatarQol.Tools {
             }).ToList();
             intent.deleteMergedBones = _deleteMergedBones;
             intent.reparentChildren = _reparentChildren;
+            intent.precomputeSignature = IntentPrecomputeUtility.BuildBoneMergerSignature(intent, _animator, intent.pairs);
+            intent.precomputeVersion = IntentPrecomputeUtility.BoneMergerVersion;
+            intent.precomputedRenderers = BoneMergerOp.PrecomputeRenderers(_animator, intent.pairs, out _);
             EditorUtility.SetDirty(intent);
 
             Undo.CollapseUndoOperations(group);
 
-            _resultSummary = $"Saved {intent.pairs.Count} pair(s) to BoneMerger intent on {avatarRoot.name}.";
+            _resultSummary = $"Saved {intent.pairs.Count} pair(s) to BoneMerger intent on {avatarRoot.name}. Precomputed {intent.precomputedRenderers.Count} renderer match(es).";
             if (_deleteMergedBones) {
                 _resultDetail.Add("Note: 'Delete merged-away bones' is recorded on the intent but is ignored by the build / play hooks -- it only matters when the Bone Merger window's Apply button runs.");
             }

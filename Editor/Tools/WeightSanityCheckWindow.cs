@@ -114,6 +114,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private const string WikiUrl = "https://github.com/RealWhyKnot/wk-vrc-qol/wiki/Tools-Overview#weight-sanity-check";
 
         private readonly List<DetectedIssue> _issues = new List<DetectedIssue>();
+        private readonly HashSet<int> _selectedIssueIndices = new HashSet<int>();
         // Tracked per scan so we can offer a "Enable Read/Write on these N
         // meshes" button below the scan output.
         private readonly List<SkinnedMeshRenderer> _nonReadableRenderers = new List<SkinnedMeshRenderer>();

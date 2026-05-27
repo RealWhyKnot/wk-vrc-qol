@@ -92,6 +92,30 @@ namespace WhyKnot.AvatarQol.Tests {
             }
         }
 
+        [Test]
+        public void ApplyNonDestructive_UsesPrecomputedRendererPlan() {
+            var pair = new BoneMergerPair { mergeFrom = _boneA, mergeInto = _boneB };
+            var plan = BoneMergerOp.PrecomputeRenderers(_animator, new[] { pair }, out var error);
+            Assert.IsTrue(string.IsNullOrEmpty(error));
+            Assert.AreEqual(1, plan.Count);
+            Assert.AreSame(_renderer, plan[0].renderer);
+
+            var session = new AvatarIntentSession();
+            try {
+                var result = BoneMergerOp.ApplyNonDestructive(
+                    _animator,
+                    new[] { pair },
+                    session,
+                    plan);
+
+                Assert.Greater(result.WeightsRedirected, 0);
+                Assert.AreEqual(1, ReadFirstVertexBoneIndex(_renderer.sharedMesh));
+                Assert.AreEqual(0, ReadFirstVertexBoneIndex(_sourceMesh));
+            } finally {
+                session.Dispose();
+            }
+        }
+
         // ---- Helpers ----------------------------------------------------
 
         private static Mesh BuildSingleVertexMesh(byte weightOnBoneIndex) {

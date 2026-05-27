@@ -37,6 +37,12 @@ namespace WhyKnot.AvatarQol.Components {
         public Transform mergeInto;
     }
 
+    [Serializable]
+    public sealed class BoneMergerPrecomputedRenderer {
+        public SkinnedMeshRenderer renderer;
+        public List<BoneMergerPair> pairs = new List<BoneMergerPair>();
+    }
+
     [AddComponentMenu("WhyKnot/Avatar QoL/Bone Merger Intent")]
     [DisallowMultipleComponent]
     public sealed class WhyKnotBoneMergerIntent : MonoBehaviour, IEditorOnly {
@@ -59,5 +65,10 @@ namespace WhyKnot.AvatarQol.Components {
 
         [Tooltip("Write per-renderer merge stats to the WhyKnot log when this intent runs. Useful when an expected merge isn't landing in play mode.")]
         public bool verboseLog;
+
+        [HideInInspector] public string precomputeSignature;
+        [HideInInspector] public int precomputeVersion;
+        [HideInInspector] public List<BoneMergerPrecomputedRenderer> precomputedRenderers =
+            new List<BoneMergerPrecomputedRenderer>();
     }
 }

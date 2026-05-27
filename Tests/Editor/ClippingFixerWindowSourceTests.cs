@@ -73,8 +73,13 @@ namespace WhyKnot.AvatarQol.Tests {
 
             StringAssert.Contains("new Vector2(900, 680)", window);
             StringAssert.Contains("Stop wobble", issues);
-            StringAssert.Contains("Add component (", issues);
-            StringAssert.Contains("Add component also uses the current selection", issues);
+            StringAssert.Contains("Add fix component", issues);
+            StringAssert.Contains("Warning selection is only used by destructive apply", issues);
+            StringAssert.Contains("Add component saves the current settings", issues);
+            Assert.IsFalse(issues.Contains("Add component ("),
+                "Add component must ignore row selection; selected rows are only for destructive apply.");
+            Assert.IsFalse(issues.Contains("Add component also uses the current selection"),
+                "The issue list must not claim the component uses selected rows.");
         }
 
         // Walks up from this test's source directory until it finds the

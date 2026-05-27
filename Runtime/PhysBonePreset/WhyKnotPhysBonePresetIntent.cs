@@ -25,6 +25,50 @@ using VRC.SDKBase;
 
 namespace WhyKnot.AvatarQol.Components {
 
+    [Serializable]
+    public sealed class PhysBonePresetPrecomputedPlan {
+        public string presetId;
+        public string presetDisplayName;
+        public List<PhysBonePresetPrecomputedPhysBone> physBones =
+            new List<PhysBonePresetPrecomputedPhysBone>();
+        public List<PhysBonePresetPrecomputedCollider> colliders =
+            new List<PhysBonePresetPrecomputedCollider>();
+    }
+
+    [Serializable]
+    public sealed class PhysBonePresetPrecomputedPhysBone {
+        public Transform root;
+        public List<Transform> ignoreTransforms = new List<Transform>();
+        public List<int> colliderRefs = new List<int>();
+        public float pull = 0.2f;
+        public float spring = 0.5f;
+        public float stiffness = 0.4f;
+        public float gravity;
+        public float gravityFalloff;
+        public float immobile;
+        public int immobileType;
+        public float radius = 0.05f;
+        public int allowCollision;
+        public int allowGrabbing;
+        public int allowPosing;
+        public float maxStretch;
+        public bool isAnimated;
+        public string parameter;
+    }
+
+    [Serializable]
+    public sealed class PhysBonePresetPrecomputedCollider {
+        public string name = "PhysBoneCollider";
+        public Transform attachTo;
+        public Transform rootTransform;
+        public int shape;
+        public float radius = 0.04f;
+        public float height = 0.2f;
+        public Vector3 position;
+        public Vector3 eulerRotation;
+        public bool insideBounds;
+    }
+
     [AddComponentMenu("WhyKnot/Avatar QoL/PhysBone Preset Intent")]
     [DisallowMultipleComponent]
     public sealed class WhyKnotPhysBonePresetIntent : MonoBehaviour, IEditorOnly {
@@ -56,5 +100,10 @@ namespace WhyKnot.AvatarQol.Components {
 
         [Tooltip("Write per-apply spawn stats to the WhyKnot log when this intent runs.")]
         public bool verboseLog;
+
+        [HideInInspector] public string precomputeSignature;
+        [HideInInspector] public int precomputeVersion;
+        [HideInInspector] public PhysBonePresetPrecomputedPlan precomputedPlan =
+            new PhysBonePresetPrecomputedPlan();
     }
 }

@@ -12,6 +12,35 @@ using VRC.SDKBase;
 
 namespace WhyKnot.AvatarQol.Components {
 
+    [System.Serializable]
+    public sealed class ClippingFixPrecomputedIssue {
+        public int kind;
+        public SkinnedMeshRenderer renderer;
+        public string rendererPath;
+        public SkinnedMeshRenderer comparisonRenderer;
+        public string comparisonPath;
+        public int vertexIndex = -1;
+        public int targetTriangleIndex = -1;
+        public int comparisonTriangleIndex = -1;
+        public int[] affectedVertexIndices = new int[0];
+        public Vector3 worldPosition;
+        public Vector3 nearestSurfacePosition;
+        public Vector3 surfaceNormal;
+        public Vector3 pushWorld;
+        public float penetrationDepth;
+        public float score;
+        public string reason;
+        public Component physBoneComponent;
+        public string physBoneSourceLabel;
+        public Transform physBoneRoot;
+        public Transform drivenBone;
+        public float physBoneWeight;
+        public float estimatedMotion;
+        public float clearance;
+        public bool hasEffectiveColliders;
+        public bool physBoneHighSeverity;
+    }
+
     [AddComponentMenu("WhyKnot/Avatar QoL/Clipping Fix")]
     [DisallowMultipleComponent]
     public sealed class WhyKnotClippingFixIntent : MonoBehaviour, IEditorOnly {
@@ -59,6 +88,11 @@ namespace WhyKnot.AvatarQol.Components {
 
         [Tooltip("Write scan/fix counts to the WhyKnot log when this component runs.")]
         public bool verboseLog;
+
+        [HideInInspector] public string precomputeSignature;
+        [HideInInspector] public int precomputeVersion;
+        [HideInInspector] public List<ClippingFixPrecomputedIssue> precomputedIssues =
+            new List<ClippingFixPrecomputedIssue>();
 
         private void Reset() {
             targetRenderer = GetComponent<SkinnedMeshRenderer>();
