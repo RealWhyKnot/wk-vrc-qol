@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file. Format foll
 - **scripts:** Wait for non-empty NUnit results file, not just existence (55be8fd)
 - **scripts:** Bump test results flush poll to 60 seconds (83d3146)
 - **scripts:** Drop -quit from batch test runner; wait for results flush (db4162c)
+- **mask-painter:** Render preview on depth-hidden mesh (c1c4d9f)
 
 ---
 
