@@ -26,6 +26,7 @@ Each tool then picks what it needs from those helpers and otherwise stays indepe
 ## What's in the box
 
 - **Weight Sanity Check** -- flags vertices on one side of a humanoid avatar that have non-trivial weight from a bone on the other side. Catches the most common Blender weight-transfer mistake.
+- **Weight Transfer** -- transfers weights between skinned renderers with source-surface matching, bone mapping, and inpainting for rejected vertices.
 - **Mesh Sculpt** -- edits generated skinned-mesh clones in Scene view with vertex selection, move, grab/smooth/inflate brushes, and triangle/quad face fill.
 
 More tools to come.

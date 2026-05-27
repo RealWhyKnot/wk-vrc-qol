@@ -96,6 +96,25 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 - New vertices, arbitrary n-gons, bridge/extrude operations, and corrective blendshape storage are not part of this first pass.
 - Edits are written to the generated mesh clone assigned to the renderer.
 
+## Weight Transfer (early)
+
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Weight Transfer...*, or right-click a `SkinnedMeshRenderer` in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Weight Transfer (target this)...*.
+
+**What it does:** Transfers skin weights from a source `SkinnedMeshRenderer` to a target `SkinnedMeshRenderer`. The first pass uses projected source-surface matching, nearest-surface fallback, barycentric blending from source triangle vertices, source-to-target bone mapping, and topology inpainting for target vertices that do not get a confident direct match.
+
+**FBX safety.** Applying creates or reuses a generated mesh asset under `Assets/AvatarQol Generated/` and assigns it to the target renderer before writing weights. Imported FBX/model sub-assets are not edited in place.
+
+**Current controls:**
+
+- **Mode** -- Hybrid Surface, Projected Body Surface, Nearest Surface, or Exact Topology.
+- **Closest max / Projected max** -- distance gates in metres.
+- **Normal angle** -- rejects surface matches with poor normal agreement.
+- **Allow flipped normals** -- opt-in for layered or inside-out meshes.
+- **Inpaint rejected vertices** -- fills unmatched vertices from nearby accepted vertices over target mesh topology.
+- **Max influences / Prune below** -- final `BoneWeight1` cleanup before writing.
+
+**Current limits:** This is the transfer foundation only. Manual weight painting and PhysBone weight cleanup will reuse the same buffer, normalization, pruning, bone mapping, and generated-mesh writer in later passes.
+
 ## Auto Mesh Fixes
 
 **Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes -> Open...*, or right-click an avatar/mesh in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes...*.

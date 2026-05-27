@@ -21,6 +21,7 @@ namespace WhyKnot.AvatarQol.Tests {
             "Editor/Tools/PhysBoneClippingRiskWindow.cs",
             "Editor/Tools/PhysBonePreset/PhysBonePresetWindow.cs",
             "Editor/Tools/UvTextureTransfer/UvTextureTransferWindow.cs",
+            "Editor/Tools/WeightTransfer/WeightTransferWindow.cs",
             "Editor/Tools/WeightSanityCheckWindow.cs",
         };
 
@@ -34,6 +35,7 @@ namespace WhyKnot.AvatarQol.Tests {
             "Editor/Tools/PhysBoneClippingRiskWindow.cs",
             "Editor/Tools/PhysBonePreset/PhysBonePresetWindow.cs",
             "Editor/Tools/UvTextureTransfer/UvTextureTransferWindow.cs",
+            "Editor/Tools/WeightTransfer/WeightTransferWindow.cs",
             "Editor/Tools/WeightSanityCheckWindow.cs",
         };
 
