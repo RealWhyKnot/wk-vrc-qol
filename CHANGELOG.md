@@ -9,7 +9,16 @@ All notable changes to this project will be documented in this file. Format foll
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Added
+- **weight-transfer:** Add surface weight transfer (88105a0)
+- **mesh-sculpt:** Add generated mesh sculptor (465d6af)
+- **ui:** Add WhyKnot logo chrome (bc0abb4)
+- **uv-transfer:** Add anti-aliased bake padding (46435b4)
+- **ui:** Add responsive branded editor chrome (f6cdb1c)
+
+### Fixed
+- **ui:** Simplify window chrome (480f449)
+- **uv-transfer:** Use projected source correspondence (a7f6d5b)
 
 ---
 
