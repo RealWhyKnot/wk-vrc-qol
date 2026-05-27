@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file. Format foll
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v1.4.0-beta.2](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.4.0-beta.2) -- 2026-05-27
+
 ### Fixed
 - **ui:** Retire mesh sculpt and weight transfer menu entries (eb29e54)
 
