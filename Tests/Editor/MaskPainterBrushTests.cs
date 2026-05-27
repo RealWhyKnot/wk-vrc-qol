@@ -217,8 +217,8 @@ namespace WhyKnot.AvatarQol.Tests {
             if (lit > 0) {
                 float uMin = minPx / (float)w;
                 float uMax = (maxPx + 1) / (float)w;
-                float vMin = 1f - (maxPy + 1) / (float)h; // texture rows top->bottom
-                float vMax = 1f - minPy / (float)h;
+                float vMin = minPy / (float)h;
+                float vMax = (maxPy + 1) / (float)h;
                 bounds = Rect.MinMaxRect(uMin, vMin, uMax, vMax);
             } else {
                 bounds = Rect.zero;
@@ -226,9 +226,193 @@ namespace WhyKnot.AvatarQol.Tests {
             return (lit, coverage, bounds);
         }
 
+        private static Mesh BuildPreviewOverlayQuad(bool reverseWinding, float z, string name) {
+            var mesh = new Mesh {
+                name = name,
+                hideFlags = HideFlags.HideAndDontSave,
+            };
+            mesh.vertices = new[] {
+                new Vector3(-0.75f, -0.75f, z),
+                new Vector3(-0.75f,  0.75f, z),
+                new Vector3( 0.75f,  0.75f, z),
+                new Vector3( 0.75f, -0.75f, z),
+            };
+            mesh.uv = new[] {
+                new Vector2(0f, 0f),
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 0f),
+            };
+            mesh.triangles = reverseWinding
+                ? new[] { 0, 2, 1, 0, 3, 2 }
+                : new[] { 0, 1, 2, 0, 2, 3 };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static byte RenderPreviewOverlayQuad(bool reverseWinding, bool drawDepthPrepass = false, float overlayZ = 0f, float depthZ = 0f) {
+            var shader = MaskPainterIO.PreviewShader;
+            Assert.That(shader, Is.Not.Null, "PreviewOverlay shader failed to load.");
+
+            Mesh mesh = null;
+            Mesh depthMesh = null;
+            Texture2D mask = null;
+            Texture2D readback = null;
+            RenderTexture rt = null;
+            Material mat = null;
+            Material depthMat = null;
+            CommandBuffer cmd = null;
+            try {
+                mesh = BuildPreviewOverlayQuad(
+                    reverseWinding,
+                    overlayZ,
+                    reverseWinding ? "WkPreviewOverlayReversedQuad" : "WkPreviewOverlayQuad");
+
+                mask = new Texture2D(2, 2, TextureFormat.RGBA32, false, true) {
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+                mask.SetPixels(new[] { Color.white, Color.white, Color.white, Color.white });
+                mask.Apply(false, false);
+
+                mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+                mat.SetTexture("_MaskTex", mask);
+                mat.SetVector("_ChannelMask", new Vector4(1f, 0f, 0f, 0f));
+                mat.SetColor("_TintColor", Color.white);
+                mat.SetFloat("_TintAlpha", 1f);
+
+                rt = new RenderTexture(32, 32, 24, RenderTextureFormat.ARGB32) {
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+                rt.Create();
+
+                if (drawDepthPrepass) {
+                    depthMesh = BuildPreviewOverlayQuad(
+                        reverseWinding,
+                        depthZ,
+                        reverseWinding ? "WkPreviewOverlayReversedDepthQuad" : "WkPreviewOverlayDepthQuad");
+                    depthMat = CreateDepthPrepassMaterial();
+                }
+
+                cmd = new CommandBuffer { name = "Test PreviewOverlay Winding" };
+                cmd.SetRenderTarget(rt);
+                cmd.SetViewport(new Rect(0, 0, rt.width, rt.height));
+                cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
+                cmd.ClearRenderTarget(true, true, Color.clear);
+                if (depthMat != null) {
+                    cmd.DrawMesh(depthMesh, Matrix4x4.identity, depthMat, 0, 0);
+                }
+                cmd.DrawMesh(mesh, Matrix4x4.identity, mat, 0, 0);
+                Graphics.ExecuteCommandBuffer(cmd);
+
+                readback = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false, true) {
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+                var prev = RenderTexture.active;
+                try {
+                    RenderTexture.active = rt;
+                    readback.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                    readback.Apply(false, false);
+                } finally {
+                    RenderTexture.active = prev;
+                }
+
+                Color32 center = readback.GetPixel(rt.width / 2, rt.height / 2);
+                return Math.Max(Math.Max(center.r, center.g), center.b);
+            } finally {
+                if (cmd != null) cmd.Release();
+                if (depthMat != null) UnityEngine.Object.DestroyImmediate(depthMat);
+                if (mat != null) UnityEngine.Object.DestroyImmediate(mat);
+                if (rt != null) {
+                    rt.Release();
+                    UnityEngine.Object.DestroyImmediate(rt);
+                }
+                if (readback != null) UnityEngine.Object.DestroyImmediate(readback);
+                if (mask != null) UnityEngine.Object.DestroyImmediate(mask);
+                if (depthMesh != null) UnityEngine.Object.DestroyImmediate(depthMesh);
+                if (mesh != null) UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
+        private static Material CreateDepthPrepassMaterial() {
+            var shader = Shader.Find("Hidden/Internal-Colored");
+            Assert.That(shader, Is.Not.Null, "Hidden/Internal-Colored shader failed to load for the preview depth test.");
+
+            var mat = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            mat.SetInt("_SrcBlend", (int)BlendMode.One);
+            mat.SetInt("_DstBlend", (int)BlendMode.Zero);
+            mat.SetInt("_Cull", (int)CullMode.Off);
+            mat.SetInt("_ZWrite", 1);
+            mat.SetInt("_ZTest", (int)CompareFunction.Always);
+            mat.SetColor("_Color", Color.black);
+            return mat;
+        }
+
         // -------------------------------------------------------------------
         // Tests
         // -------------------------------------------------------------------
+
+        [Test]
+        public void BrushShader_ImportsFiveUsablePasses() {
+            var shader = MaskPainterIO.BrushShader;
+            Assert.That(shader, Is.Not.Null, "UvSpaceBrush shader failed to load.");
+            Assert.AreEqual(5, shader.passCount,
+                $"UvSpaceBrush imported with {shader.passCount} pass(es); the painter requires RGBA plus four per-channel passes.");
+            Assert.AreEqual(5, _brushMaterial.passCount,
+                $"UvSpaceBrush material imported with {_brushMaterial.passCount} pass(es); channel painting will select missing pass indices.");
+
+            if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null) {
+                Assert.Ignore("No graphics device is available; pass layout was verified, but support and SetPass cannot be trusted.");
+            }
+
+            Assert.IsTrue(shader.isSupported,
+                $"UvSpaceBrush imported but is unsupported on {SystemInfo.graphicsDeviceType}. Check shader compiler errors in Editor.log.");
+            for (int pass = 0; pass < 5; pass++) {
+                Assert.IsTrue(_brushMaterial.SetPass(pass),
+                    $"UvSpaceBrush pass {pass} exists but SetPass failed on {SystemInfo.graphicsDeviceType}.");
+            }
+        }
+
+        [Test]
+        public void PreviewOverlay_RendersBothTriangleWindings() {
+            RequireRealGpu();
+
+            byte normalWinding = RenderPreviewOverlayQuad(reverseWinding: false);
+            byte reversedWinding = RenderPreviewOverlayQuad(reverseWinding: true);
+
+            Assert.Greater(normalWinding, 128,
+                $"Preview overlay did not render the normal-winding quad; center intensity was {normalWinding}.");
+            Assert.Greater(reversedWinding, 128,
+                $"Preview overlay did not render the reversed-winding quad; center intensity was {reversedWinding}. " +
+                "The Scene view preview must be two-sided so painted inverted or double-sided avatar mesh sections remain visible.");
+        }
+
+        [Test]
+        public void PreviewOverlay_RendersOverMatchingDepthForBothTriangleWindings() {
+            RequireRealGpu();
+
+            byte normalWinding = RenderPreviewOverlayQuad(reverseWinding: false, drawDepthPrepass: true);
+            byte reversedWinding = RenderPreviewOverlayQuad(reverseWinding: true, drawDepthPrepass: true);
+
+            Assert.Greater(normalWinding, 128,
+                $"Preview overlay failed against matching normal-winding depth; center intensity was {normalWinding}.");
+            Assert.Greater(reversedWinding, 128,
+                $"Preview overlay failed against matching reversed-winding depth; center intensity was {reversedWinding}.");
+        }
+
+        [Test]
+        public void PreviewOverlay_RendersWhenSceneDepthIsCloser() {
+            RequireRealGpu();
+
+            byte center = RenderPreviewOverlayQuad(
+                reverseWinding: true,
+                drawDepthPrepass: true,
+                overlayZ: 0.5f,
+                depthZ: 0f);
+
+            Assert.Greater(center, 128,
+                $"Preview overlay was hidden by nearer scene depth; center intensity was {center}. " +
+                "The live mask preview is an editor annotation, so valid painted pixels must stay visible when the baked preview mesh is slightly behind existing Scene view depth.");
+        }
 
         [Test]
         public void Brush_RadiusZero_PaintsNothing() {
@@ -349,8 +533,9 @@ namespace WhyKnot.AvatarQol.Tests {
                 coverage = litCount / (float)(w * h);
                 if (litCount > 0) {
                     comU = (float)sumPx / (litCount * w);
-                    // V is inverted: texture rows go top->bottom, UV goes bottom->top.
-                    comV = 1f - ((float)sumPy / (litCount * h));
+                    // Texture2D pixel arrays are ordered bottom-to-top,
+                    // matching UV V coordinates.
+                    comV = (float)sumPy / (litCount * h);
                 } else {
                     comU = -1f;
                     comV = -1f;

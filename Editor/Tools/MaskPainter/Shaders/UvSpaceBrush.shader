@@ -99,35 +99,50 @@ Shader "Hidden/WhyKnot/MaskPainter/UvSpaceBrush" {
             Cull Off ZWrite Off ZTest Always
             Blend SrcAlpha OneMinusSrcAlpha
             ColorMask RGBA
-            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            ENDCG
         }
         Pass {
             Name "Channel_R"
             Cull Off ZWrite Off ZTest Always
             Blend SrcAlpha OneMinusSrcAlpha
             ColorMask R
-            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            ENDCG
         }
         Pass {
             Name "Channel_G"
             Cull Off ZWrite Off ZTest Always
             Blend SrcAlpha OneMinusSrcAlpha
             ColorMask G
-            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            ENDCG
         }
         Pass {
             Name "Channel_B"
             Cull Off ZWrite Off ZTest Always
             Blend SrcAlpha OneMinusSrcAlpha
             ColorMask B
-            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            ENDCG
         }
         Pass {
             Name "Channel_A"
             Cull Off ZWrite Off ZTest Always
             Blend SrcAlpha OneMinusSrcAlpha
             ColorMask A
-            CGPROGRAM #pragma vertex vert #pragma fragment frag ENDCG
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            ENDCG
         }
     }
 }

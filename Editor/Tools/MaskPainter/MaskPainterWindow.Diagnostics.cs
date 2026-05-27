@@ -209,10 +209,10 @@ namespace WhyKnot.AvatarQol.Tools {
                 if (totalLit > 0) {
                     float uMin = (float)minPx / w;
                     float uMax = (float)(maxPx + 1) / w;
-                    float vMin = 1f - (float)(maxPy + 1) / h; // V is flipped (texture origin at top, UV origin at bottom)
-                    float vMax = 1f - (float)minPy / h;
+                    float vMin = (float)minPy / h;
+                    float vMax = (float)(maxPy + 1) / h;
                     float uCom = (float)sumPx / (totalLit * w);
-                    float vCom = 1f - (float)sumPy / (totalLit * h);
+                    float vCom = (float)sumPy / (totalLit * h);
                     sb.AppendLine($"  lit bounding box (UV) : u=[{uMin:0.000}..{uMax:0.000}], v=[{vMin:0.000}..{vMax:0.000}]");
                     sb.AppendLine($"  lit centre of mass UV : ({uCom:0.000}, {vCom:0.000})");
                     // 4x4 grid -- read top row first (v=high) so the layout

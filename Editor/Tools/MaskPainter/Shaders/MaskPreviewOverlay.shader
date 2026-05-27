@@ -15,10 +15,13 @@
 //   B         -> (0,0,1,0)
 //   A         -> (0,0,0,1)
 //
-// Offset -1, -1 plus a tiny model-matrix scale-up (1.001) wins the
-// depth fight against the actual SkinnedMeshRenderer without visible
-// inflation. ZTest LEqual keeps the overlay correctly occluded by
-// foreground geometry (eyelashes, hair sitting in front of skin).
+// Draw as an editor annotation rather than a physically-occluded
+// surface. The baked preview mesh can land slightly behind existing
+// Scene view depth on concave or two-sided avatar geometry, which would
+// hide valid painted pixels.
+// Cull Off is deliberate: avatar meshes often contain inverted or
+// two-sided sections, and a paint preview must be visible on any
+// triangle that sampled the mask.
 
 Shader "Hidden/WhyKnot/MaskPainter/PreviewOverlay" {
     Properties {
@@ -32,10 +35,9 @@ Shader "Hidden/WhyKnot/MaskPainter/PreviewOverlay" {
         Tags { "RenderType"="Transparent" "Queue"="Overlay" "IgnoreProjector"="True" }
 
         Pass {
-            Cull Back
+            Cull Off
             ZWrite Off
-            ZTest LEqual
-            Offset -1, -1
+            ZTest Always
             Blend SrcAlpha OneMinusSrcAlpha
 
             CGPROGRAM
