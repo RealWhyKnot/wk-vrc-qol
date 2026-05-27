@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file. Format foll
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v1.3.0](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.3.0) -- 2026-05-27
+
 ### Added
 - **uv-transfer:** Mesh-to-mesh texture rebake tool (3739848)
 - **mask-painter:** UV map preview pane plus raycast snapshot fixes (cf1bbb6)
