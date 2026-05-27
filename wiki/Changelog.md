@@ -11,7 +11,8 @@ The most recent release is at the top.
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Fixed
+- **ui:** Retire mesh sculpt and weight transfer menu entries (eb29e54)
 
 ---
 
