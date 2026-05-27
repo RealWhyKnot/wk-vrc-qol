@@ -48,8 +48,14 @@ namespace WhyKnot.AvatarQol.Tools {
         [SerializeField] private int _targetSubmesh = -1;
 
         [SerializeField] private UvTextureTransferCore.AlignmentMode _alignment = UvTextureTransferCore.AlignmentMode.BoundingBox;
+        [SerializeField] private UvTextureTransferCore.CorrespondenceMode _correspondenceMode = UvTextureTransferCore.CorrespondenceMode.BidirectionalNormalRaycast;
         [SerializeField] private int   _resolution = 1024;
         [SerializeField] private float _maxDistance = 0f;     // 0 = no cap
+        [SerializeField] private float _rayFrontalDistance = 0.08f;
+        [SerializeField] private float _rayRearDistance = 0.08f;
+        [SerializeField] private float _normalAngleLimit = 65f;
+        [SerializeField] private bool  _rejectBackfaces;
+        [SerializeField] private bool  _writeDiagnosticMaps = true;
         [SerializeField] private int   _supersample = 2;      // samples per axis; 2 = 4 subpixel samples
         [SerializeField] private int   _paddingPixels = 8;    // UV island dilation after bake
         [SerializeField] private bool  _sRGBOnSave = true;    // for color textures
@@ -68,8 +74,14 @@ namespace WhyKnot.AvatarQol.Tools {
         // ---- Prefs keys ----
         private const string PrefsPrefix     = "dev.whyknot.wk-vrc-qol.UvTextureTransfer.";
         private const string PrefsAlignment  = PrefsPrefix + "Alignment";
+        private const string PrefsCorrespondence = PrefsPrefix + "CorrespondenceMode";
         private const string PrefsResolution = PrefsPrefix + "Resolution";
         private const string PrefsMaxDist    = PrefsPrefix + "MaxDistance";
+        private const string PrefsRayFrontal = PrefsPrefix + "RayFrontalDistance";
+        private const string PrefsRayRear    = PrefsPrefix + "RayRearDistance";
+        private const string PrefsNormalAngle = PrefsPrefix + "NormalAngleLimit";
+        private const string PrefsRejectBackfaces = PrefsPrefix + "RejectBackfaces";
+        private const string PrefsDiagnostics = PrefsPrefix + "WriteDiagnosticMaps";
         private const string PrefsSupersample = PrefsPrefix + "Supersample";
         private const string PrefsPadding    = PrefsPrefix + "PaddingPixels";
         private const string PrefsSRGB       = PrefsPrefix + "SRGB";
@@ -98,7 +110,7 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
         private void OnDisable() {
-            if (_previewTex != null) { DestroyImmediate(_previewTex); _previewTex = null; }
+            ReleaseResultTextures();
             SavePrefs();
             EditorApplication.update -= RepaintAnimatedChrome;
         }
@@ -140,7 +152,7 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 EditorGUILayout.LabelField(
                     new GUIContent("UV Texture Transfer",
-                        "Rebake a texture from one mesh's UV layout into another mesh's UV layout using closest-point correspondence on the meshes' 3D geometry."),
+                        "Rebake a texture from one mesh's UV layout into another mesh's UV layout using projected surface correspondence."),
                     WkStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(
@@ -153,7 +165,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawHelpNotice() {
             WkStyles.Notice(NoticeKind.Info,
-                "Pick a source mesh and the texture authored for it, pick the target renderer in your scene, choose Bounding box alignment if the two avatars are different sizes, then Bake. Save PNG when the preview looks right.");
+                "Pick a source mesh and the texture authored for it, pick the target renderer in your scene, choose alignment, then Bake. Projected modes avoid grabbing unrelated nearby surfaces; Legacy closest point is available only for comparison.");
         }
 
         private void DrawSourceSection() {
@@ -287,6 +299,52 @@ namespace WhyKnot.AvatarQol.Tools {
                     });
 
                 WkStyles.LabeledField(
+                    new GUIContent("Correspondence",
+                        "How each target surface point finds its source surface point. Raycast modes avoid the global nearest-surface failure that can pull torso or pelvis tattoos onto arms."),
+                    () => {
+                        var prev = _correspondenceMode;
+                        _correspondenceMode = (UvTextureTransferCore.CorrespondenceMode)EditorGUILayout.EnumPopup(_correspondenceMode);
+                        if (prev != _correspondenceMode) SavePrefs();
+                    });
+
+                if (_correspondenceMode == UvTextureTransferCore.CorrespondenceMode.LegacyClosestPoint) {
+                    WkStyles.Notice(NoticeKind.Warning,
+                        "Legacy closest point can pick nearby but unrelated body parts. Use a raycast mode for avatar tattoos.");
+                } else {
+                    WkStyles.LabeledField(
+                        new GUIContent("Ray out / in",
+                            "Projection envelope in metres. The ray starts this far along the target normal and travels through the surface by the rear amount."),
+                        () => {
+                            using (new EditorGUILayout.HorizontalScope()) {
+                                float prevFront = _rayFrontalDistance;
+                                float prevRear = _rayRearDistance;
+                                _rayFrontalDistance = EditorGUILayout.Slider(_rayFrontalDistance, 0.005f, 0.5f);
+                                _rayRearDistance = EditorGUILayout.Slider(_rayRearDistance, 0.005f, 0.5f);
+                                if (!Mathf.Approximately(prevFront, _rayFrontalDistance)
+                                        || !Mathf.Approximately(prevRear, _rayRearDistance)) {
+                                    SavePrefs();
+                                }
+                            }
+                        });
+
+                    WkStyles.LabeledField(
+                        new GUIContent("Normal angle",
+                            "Reject source hits whose face normal differs too much from the target normal. Higher values are more permissive; 0 disables this filter."),
+                        () => {
+                            float prev = _normalAngleLimit;
+                            _normalAngleLimit = EditorGUILayout.Slider(_normalAngleLimit, 0f, 120f);
+                            if (!Mathf.Approximately(prev, _normalAngleLimit)) SavePrefs();
+                        });
+
+                    bool prevBackfaces = _rejectBackfaces;
+                    _rejectBackfaces = EditorGUILayout.ToggleLeft(
+                        new GUIContent("Reject backfaces",
+                            "Ignore ray hits that strike the back side of a source triangle. Leave off for meshes with inconsistent normals."),
+                        _rejectBackfaces);
+                    if (prevBackfaces != _rejectBackfaces) SavePrefs();
+                }
+
+                WkStyles.LabeledField(
                     new GUIContent("Resolution",
                         "Output texture size. Match the target material's texture resolution so the baked PNG drops in without resampling."),
                     () => {
@@ -323,12 +381,19 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 WkStyles.LabeledField(
                     new GUIContent("Max distance (m)",
-                        "Drop target texels whose nearest point on the source mesh is further than this. 0 disables the cap. Useful for outfits that should leave the rest of the body texture alone -- set to e.g. 0.02 so only texels near the outfit pick up source color."),
+                        "Drop target texels whose accepted source hit is further than this. 0 disables this extra cap; raycast modes are still bounded by Ray out / in."),
                     () => {
                         float prev = _maxDistance;
                         _maxDistance = EditorGUILayout.Slider(_maxDistance, 0f, 0.5f);
                         if (!Mathf.Approximately(prev, _maxDistance)) SavePrefs();
                     });
+
+                bool prevDiagnostics = _writeDiagnosticMaps;
+                _writeDiagnosticMaps = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Write diagnostic maps on save",
+                        "Keep hit-distance, normal-dot, reject-reason, and source-triangle debug textures from the bake, then save them next to the PNG."),
+                    _writeDiagnosticMaps);
+                if (prevDiagnostics != _writeDiagnosticMaps) SavePrefs();
 
                 WkStyles.LabeledField(
                     new GUIContent("Fallback color",
@@ -407,7 +472,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 if (_hasResult) {
                     EditorGUILayout.LabelField(
-                        $"{_resolution}²  ·  AA {_lastResult.supersample}x  ·  covered {_lastResult.coveredTexels:N0} / {_lastResult.totalTexels:N0}  ·  padded {_lastResult.paddedTexels:N0}  ·  rejected {_lastResult.rejectedByDistance:N0}  ·  max dist {_lastResult.maxObservedDistance:F4} m",
+                        $"{_resolution}²  ·  {_lastResult.correspondenceMode}  ·  AA {_lastResult.supersample}x  ·  covered {_lastResult.coveredTexels:N0} / {_lastResult.totalTexels:N0}  ·  padded {_lastResult.paddedTexels:N0}  ·  dist rejects {_lastResult.rejectedByDistance:N0}  ·  ray miss {_lastResult.rejectedByRayMiss:N0}  ·  normal rejects {_lastResult.rejectedByNormalAngle:N0}  ·  max dist {_lastResult.maxObservedDistance:F4} m",
                         WkStyles.Muted);
                 }
                 const float previewSize = 320f;
@@ -488,6 +553,12 @@ namespace WhyKnot.AvatarQol.Tools {
                 fallbackColor       = _fallbackColor,
                 supersample         = _supersample,
                 paddingPixels       = _paddingPixels,
+                correspondenceMode  = _correspondenceMode,
+                rayFrontalDistance  = _rayFrontalDistance,
+                rayRearDistance     = _rayRearDistance,
+                normalAngleLimitDegrees = _normalAngleLimit,
+                rejectBackfaces     = _rejectBackfaces,
+                writeDiagnosticMaps = _writeDiagnosticMaps,
                 onProgress          = ReportProgress,
             };
 
@@ -496,14 +567,16 @@ namespace WhyKnot.AvatarQol.Tools {
                 var t0 = EditorApplication.timeSinceStartup;
                 var result = UvTextureTransferCore.Transfer(opt);
                 double elapsed = EditorApplication.timeSinceStartup - t0;
-                if (_previewTex != null) DestroyImmediate(_previewTex);
+                ReleaseResultTextures();
                 _previewTex = result.output;
                 _lastResult = result;
                 _hasResult  = true;
                 AvatarQolLogger.Instance.Info(
                     $"UV Texture Transfer bake done in {elapsed:F2}s -- " +
                     $"covered {result.coveredTexels:N0}/{result.totalTexels:N0} texels, " +
-                    $"padded {result.paddedTexels:N0}, rejected {result.rejectedByDistance:N0}, " +
+                    $"mode {result.correspondenceMode}, padded {result.paddedTexels:N0}, " +
+                    $"distance rejects {result.rejectedByDistance:N0}, ray misses {result.rejectedByRayMiss:N0}, " +
+                    $"normal rejects {result.rejectedByNormalAngle:N0}, backface rejects {result.rejectedByBackface:N0}, " +
                     $"aa {result.supersample}x, padding {result.paddingPixels}px, " +
                     $"max observed distance {result.maxObservedDistance:F4} m, " +
                     $"output {_previewTex.width}x{_previewTex.height}.");
@@ -533,7 +606,42 @@ namespace WhyKnot.AvatarQol.Tools {
             if (string.IsNullOrEmpty(path)) return;
             if (UvTextureTransferIO.SavePng(_previewTex, path, _sRGBOnSave)) {
                 _lastSavedPath = path;
+                SaveDiagnosticMaps(path);
             }
+        }
+
+        private void SaveDiagnosticMaps(string outputPath) {
+            if (!_writeDiagnosticMaps || !_hasResult || string.IsNullOrEmpty(outputPath)) return;
+            SaveDiagnosticMap(_lastResult.hitDistanceMap, outputPath, "HitDistance");
+            SaveDiagnosticMap(_lastResult.normalDotMap, outputPath, "NormalDot");
+            SaveDiagnosticMap(_lastResult.rejectReasonMap, outputPath, "RejectReason");
+            SaveDiagnosticMap(_lastResult.sourceTriangleMap, outputPath, "SourceTriangle");
+        }
+
+        private static void SaveDiagnosticMap(Texture2D texture, string outputPath, string suffix) {
+            if (texture == null) return;
+            string dir = Path.GetDirectoryName(outputPath);
+            string name = Path.GetFileNameWithoutExtension(outputPath);
+            if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(name)) return;
+            string path = Path.Combine(dir, $"{name}_{suffix}.png");
+            UvTextureTransferIO.SavePng(texture, path, sRGB: false);
+        }
+
+        private void ReleaseResultTextures() {
+            if (_previewTex != null) {
+                DestroyImmediate(_previewTex);
+                _previewTex = null;
+            }
+            DestroyResultTexture(_lastResult.hitDistanceMap);
+            DestroyResultTexture(_lastResult.normalDotMap);
+            DestroyResultTexture(_lastResult.rejectReasonMap);
+            DestroyResultTexture(_lastResult.sourceTriangleMap);
+            _lastResult = default;
+            _hasResult = false;
+        }
+
+        private static void DestroyResultTexture(Texture2D texture) {
+            if (texture != null) DestroyImmediate(texture);
         }
 
         private string ResolveDefaultSaveFolder() {
@@ -583,8 +691,14 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void LoadPrefs() {
             _alignment   = (UvTextureTransferCore.AlignmentMode)EditorPrefs.GetInt(PrefsAlignment, (int)_alignment);
+            _correspondenceMode = (UvTextureTransferCore.CorrespondenceMode)EditorPrefs.GetInt(PrefsCorrespondence, (int)_correspondenceMode);
             _resolution  = EditorPrefs.GetInt(PrefsResolution, _resolution);
             _maxDistance = EditorPrefs.GetFloat(PrefsMaxDist, _maxDistance);
+            _rayFrontalDistance = EditorPrefs.GetFloat(PrefsRayFrontal, _rayFrontalDistance);
+            _rayRearDistance = EditorPrefs.GetFloat(PrefsRayRear, _rayRearDistance);
+            _normalAngleLimit = EditorPrefs.GetFloat(PrefsNormalAngle, _normalAngleLimit);
+            _rejectBackfaces = EditorPrefs.GetBool(PrefsRejectBackfaces, _rejectBackfaces);
+            _writeDiagnosticMaps = EditorPrefs.GetBool(PrefsDiagnostics, _writeDiagnosticMaps);
             _supersample = Mathf.Clamp(EditorPrefs.GetInt(PrefsSupersample, _supersample), 1, 4);
             _paddingPixels = Mathf.Clamp(EditorPrefs.GetInt(PrefsPadding, _paddingPixels), 0, 32);
             _sRGBOnSave  = EditorPrefs.GetBool(PrefsSRGB, _sRGBOnSave);
@@ -593,8 +707,14 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void SavePrefs() {
             EditorPrefs.SetInt(PrefsAlignment, (int)_alignment);
+            EditorPrefs.SetInt(PrefsCorrespondence, (int)_correspondenceMode);
             EditorPrefs.SetInt(PrefsResolution, _resolution);
             EditorPrefs.SetFloat(PrefsMaxDist, _maxDistance);
+            EditorPrefs.SetFloat(PrefsRayFrontal, _rayFrontalDistance);
+            EditorPrefs.SetFloat(PrefsRayRear, _rayRearDistance);
+            EditorPrefs.SetFloat(PrefsNormalAngle, _normalAngleLimit);
+            EditorPrefs.SetBool(PrefsRejectBackfaces, _rejectBackfaces);
+            EditorPrefs.SetBool(PrefsDiagnostics, _writeDiagnosticMaps);
             EditorPrefs.SetInt(PrefsSupersample, _supersample);
             EditorPrefs.SetInt(PrefsPadding, _paddingPixels);
             EditorPrefs.SetBool(PrefsSRGB, _sRGBOnSave);

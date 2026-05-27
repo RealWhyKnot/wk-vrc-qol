@@ -502,6 +502,81 @@ namespace WhyKnot.AvatarQol.Tests {
         }
 
         [Test]
+        public void Transfer_NormalRaycastIgnoresCloserOffRaySurface() {
+            var source = BuildProjectionTrapSourceMesh();
+            var target = BuildRaisedNarrowTargetMesh();
+            var src = BuildRedGreenTexture();
+            try {
+                var opt = new UvTextureTransferCore.TransferOptions {
+                    sourceMesh        = source,
+                    sourceSubmesh     = -1,
+                    sourceTexture     = src,
+                    targetMesh        = target,
+                    targetSubmesh     = -1,
+                    outputResolution  = 8,
+                    alignment         = UvTextureTransferCore.AlignmentMode.Identity,
+                    sourceWorldMatrix = Matrix4x4.identity,
+                    targetWorldMatrix = Matrix4x4.identity,
+                    maxDistance       = 0.35f,
+                    gridDim           = 4,
+                    fallbackColor     = Color.black,
+                    correspondenceMode = UvTextureTransferCore.CorrespondenceMode.NormalRaycast,
+                    rayFrontalDistance = 0.35f,
+                    rayRearDistance    = 0.35f,
+                    normalAngleLimitDegrees = 80f,
+                    paddingPixels      = 0,
+                };
+                var result = UvTextureTransferCore.Transfer(opt);
+                var center = result.output.GetPixel(4, 4);
+                Assert.Greater(center.g, 0.75f,
+                    "Normal projection should sample the intended horizontal source surface.");
+                Assert.Less(center.r, 0.25f,
+                    "Normal projection should not grab the closer off-ray red distractor surface.");
+                Assert.AreEqual(0, result.rejectedByRayMiss + result.rejectedByNormalAngle + result.rejectedByDistance);
+                Object.DestroyImmediate(result.output);
+            } finally {
+                Object.DestroyImmediate(source);
+                Object.DestroyImmediate(target);
+                Object.DestroyImmediate(src);
+            }
+        }
+
+        [Test]
+        public void Transfer_LegacyClosestPointCanPickCloserUnrelatedSurface() {
+            var source = BuildProjectionTrapSourceMesh();
+            var target = BuildRaisedNarrowTargetMesh();
+            var src = BuildRedGreenTexture();
+            try {
+                var opt = new UvTextureTransferCore.TransferOptions {
+                    sourceMesh        = source,
+                    sourceSubmesh     = -1,
+                    sourceTexture     = src,
+                    targetMesh        = target,
+                    targetSubmesh     = -1,
+                    outputResolution  = 8,
+                    alignment         = UvTextureTransferCore.AlignmentMode.Identity,
+                    sourceWorldMatrix = Matrix4x4.identity,
+                    targetWorldMatrix = Matrix4x4.identity,
+                    maxDistance       = 0.35f,
+                    gridDim           = 4,
+                    fallbackColor     = Color.black,
+                    correspondenceMode = UvTextureTransferCore.CorrespondenceMode.LegacyClosestPoint,
+                    paddingPixels      = 0,
+                };
+                var result = UvTextureTransferCore.Transfer(opt);
+                var center = result.output.GetPixel(4, 4);
+                Assert.Greater(center.r, 0.75f,
+                    "Legacy nearest-surface transfer demonstrates the avatar failure mode: a closer unrelated surface wins.");
+                Assert.Less(center.g, 0.25f);
+                Object.DestroyImmediate(result.output);
+            } finally {
+                Object.DestroyImmediate(source);
+                Object.DestroyImmediate(target);
+                Object.DestroyImmediate(src);
+            }
+        }
+
+        [Test]
         public void Transfer_SupersamplingAntiAliasesPartialUvCoverage() {
             var mesh = BuildSmallCornerTriangleMesh();
             var src = BuildFlatColorTexture(Color.white);
@@ -837,6 +912,57 @@ namespace WhyKnot.AvatarQol.Tests {
             return mesh;
         }
 
+        private static Mesh BuildRaisedNarrowTargetMesh() {
+            var mesh = new Mesh { name = "RaisedTargetQuad" };
+            mesh.vertices = new[] {
+                new Vector3(0.10f, 0.10f, 0.20f),
+                new Vector3(0.20f, 0.10f, 0.20f),
+                new Vector3(0.20f, 0.90f, 0.20f),
+                new Vector3(0.10f, 0.90f, 0.20f),
+            };
+            mesh.uv = new[] {
+                new Vector2(0, 0), new Vector2(1, 0),
+                new Vector2(1, 1), new Vector2(0, 1),
+            };
+            mesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static Mesh BuildProjectionTrapSourceMesh() {
+            var mesh = new Mesh { name = "ProjectionTrapSource" };
+            mesh.vertices = new[] {
+                // Intended horizontal source surface below the target.
+                new Vector3(0.00f, 0.00f, 0.00f),
+                new Vector3(0.30f, 0.00f, 0.00f),
+                new Vector3(0.30f, 1.00f, 0.00f),
+                new Vector3(0.00f, 1.00f, 0.00f),
+                // Closer vertical distractor beside the target surface.
+                new Vector3(0.05f, 0.00f, 0.05f),
+                new Vector3(0.05f, 1.00f, 0.05f),
+                new Vector3(0.05f, 1.00f, 0.35f),
+                new Vector3(0.05f, 0.00f, 0.35f),
+            };
+            mesh.uv = new[] {
+                // Green half of BuildRedGreenTexture.
+                new Vector2(0.75f, 0.25f),
+                new Vector2(0.75f, 0.25f),
+                new Vector2(0.75f, 0.75f),
+                new Vector2(0.75f, 0.75f),
+                // Red half of BuildRedGreenTexture.
+                new Vector2(0.25f, 0.25f),
+                new Vector2(0.25f, 0.75f),
+                new Vector2(0.25f, 0.75f),
+                new Vector2(0.25f, 0.25f),
+            };
+            mesh.triangles = new[] {
+                0, 1, 2, 0, 2, 3,
+                4, 5, 6, 4, 6, 7,
+            };
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
         private static Texture2D BuildFlatColorTexture(Color color) {
             var t = new Texture2D(4, 4, TextureFormat.RGBA32, mipChain: false, linear: true) {
                 filterMode = FilterMode.Bilinear,
@@ -845,6 +971,20 @@ namespace WhyKnot.AvatarQol.Tests {
             var px = new Color[16];
             for (int i = 0; i < px.Length; i++) px[i] = color;
             t.SetPixels(px);
+            t.Apply();
+            return t;
+        }
+
+        private static Texture2D BuildRedGreenTexture() {
+            var t = new Texture2D(4, 4, TextureFormat.RGBA32, mipChain: false, linear: true) {
+                filterMode = FilterMode.Point,
+                wrapMode   = TextureWrapMode.Clamp,
+            };
+            for (int y = 0; y < 4; y++) {
+                for (int x = 0; x < 4; x++) {
+                    t.SetPixel(x, y, x < 2 ? Color.red : Color.green);
+                }
+            }
             t.Apply();
             return t;
         }

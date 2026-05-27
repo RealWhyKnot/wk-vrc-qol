@@ -2,21 +2,23 @@
 //
 // Mesh-to-mesh texture transfer. Bake a texture authored against a
 // source mesh's UV0 layout into the UV0 layout of a different target
-// mesh by closest-point correspondence on the meshes' 3D geometry.
+// mesh by reconstructing target surface points, resolving source surface
+// correspondence, then sampling the source texture through source UV0.
 //
 // Pipeline:
 //   1. UV-rasterize the target mesh. For every output texel sample store
 //      (target triangle index, barycentric weights). Quality mode repeats
 //      this at several subpixel offsets and averages the results.
 //   2. Build a flat uniform spatial grid over the source mesh's
-//      triangles for cheap nearest-triangle queries. The grid stores
+//      triangles for cheap ray and nearest-triangle queries. The grid stores
 //      a single int[] of triangle indices plus a parallel int[] of
 //      per-cell offsets -- no per-cell List<int> allocation.
 //   3. For each covered target texel, interpolate the target mesh's
-//      vertex positions to get a sample point, query the grid for
-//      the closest source triangle (AABB-distance early-out skips
-//      triangles already further than the current best hit), and
-//      bilinear-sample the source texture into the output.
+//      vertex positions and normals to get a sample point and projection
+//      direction. In the default avatar-safe mode, cast a bounded ray into
+//      source triangles and reject hits by distance, normal angle, and
+//      backface policy. Legacy closest-point remains available for
+//      diagnostics and already-identical meshes.
 //   4. Optionally dilate covered texels into adjacent uncovered texels
 //      for standard UV island padding. This prevents transparent/black
 //      fallback pixels from bleeding into island borders under bilinear
@@ -31,7 +33,7 @@
 // matching packages before the package compiles.
 //
 // Pure-math entry points (ClosestPointOnTriangle, BuildSpatialGrid,
-// QueryClosest, RasterizeTargetUv, ComputeBBoxAlignment,
+// QueryClosest, QueryProjected, RasterizeTargetUv, ComputeBBoxAlignment,
 // SampleBilinearClamp32) are static and side-effect-free, exercised
 // directly from the Tests.Editor asmdef.
 
@@ -247,6 +249,23 @@ namespace WhyKnot.AvatarQol.Tools {
             public float distance;
         }
 
+        internal enum RejectReason {
+            None,
+            RayMiss,
+            Distance,
+            NormalAngle,
+            Backface,
+        }
+
+        internal struct ProjectionHit {
+            public int triangleIndex;  // -1 if no source triangle accepted.
+            public Vector3 point;
+            public float wa, wb, wc;
+            public float distance;
+            public float normalDot;
+            public RejectReason rejectReason;
+        }
+
         internal static ClosestHit QueryClosest(
                 SpatialGrid grid, Vector3[] verts, int[] triangles, Vector3 query) {
             var hit = new ClosestHit { triangleIndex = -1, distance = float.PositiveInfinity };
@@ -334,6 +353,189 @@ namespace WhyKnot.AvatarQol.Tools {
 
             hit.distance = hit.triangleIndex >= 0 ? Mathf.Sqrt(bestDistSq) : float.PositiveInfinity;
             return hit;
+        }
+
+        internal static ProjectionHit QueryProjected(
+                SpatialGrid grid,
+                Vector3[] verts,
+                int[] triangles,
+                Vector3[] faceNormals,
+                Vector3 targetPoint,
+                Vector3 targetNormal,
+                float frontalDistance,
+                float rearDistance,
+                float minNormalDot,
+                bool rejectBackfaces,
+                bool bidirectional) {
+            var best = QueryProjectedOneWay(
+                grid, verts, triangles, faceNormals,
+                targetPoint, targetNormal, targetNormal,
+                frontalDistance, rearDistance,
+                minNormalDot, rejectBackfaces);
+
+            if (!bidirectional || best.triangleIndex >= 0) return best;
+
+            var reverse = QueryProjectedOneWay(
+                grid, verts, triangles, faceNormals,
+                targetPoint, -targetNormal, targetNormal,
+                rearDistance, frontalDistance,
+                minNormalDot, rejectBackfaces);
+
+            if (reverse.triangleIndex >= 0) return reverse;
+            return best.rejectReason != RejectReason.RayMiss ? best : reverse;
+        }
+
+        private static ProjectionHit QueryProjectedOneWay(
+                SpatialGrid grid,
+                Vector3[] verts,
+                int[] triangles,
+                Vector3[] faceNormals,
+                Vector3 targetPoint,
+                Vector3 projectionNormal,
+                Vector3 compareNormal,
+                float frontalDistance,
+                float rearDistance,
+                float minNormalDot,
+                bool rejectBackfaces) {
+            var result = new ProjectionHit {
+                triangleIndex = -1,
+                distance = float.PositiveInfinity,
+                normalDot = -1f,
+                rejectReason = RejectReason.RayMiss,
+            };
+            if (grid == null || grid.cellTriangles == null || grid.cellTriangles.Length == 0) return result;
+
+            projectionNormal = SafeNormalize(projectionNormal, Vector3.up);
+            compareNormal = SafeNormalize(compareNormal, projectionNormal);
+            frontalDistance = Mathf.Max(0.0001f, frontalDistance);
+            rearDistance = Mathf.Max(0.0001f, rearDistance);
+
+            Vector3 rayOrigin = targetPoint + projectionNormal * frontalDistance;
+            Vector3 rayDir = -projectionNormal;
+            float rayLength = frontalDistance + rearDistance;
+            Vector3 rayEnd = rayOrigin + rayDir * rayLength;
+
+            int dim = grid.dim;
+            Vector3 min = Vector3.Min(rayOrigin, rayEnd);
+            Vector3 max = Vector3.Max(rayOrigin, rayEnd);
+            float pad = Mathf.Max(grid.minCellExtent * 0.5f, 1e-5f);
+            min -= new Vector3(pad, pad, pad);
+            max += new Vector3(pad, pad, pad);
+
+            int x0 = Mathf.Clamp(Mathf.FloorToInt((min.x - grid.origin.x) / grid.cellSize.x), 0, dim - 1);
+            int y0 = Mathf.Clamp(Mathf.FloorToInt((min.y - grid.origin.y) / grid.cellSize.y), 0, dim - 1);
+            int z0 = Mathf.Clamp(Mathf.FloorToInt((min.z - grid.origin.z) / grid.cellSize.z), 0, dim - 1);
+            int x1 = Mathf.Clamp(Mathf.FloorToInt((max.x - grid.origin.x) / grid.cellSize.x), 0, dim - 1);
+            int y1 = Mathf.Clamp(Mathf.FloorToInt((max.y - grid.origin.y) / grid.cellSize.y), 0, dim - 1);
+            int z1 = Mathf.Clamp(Mathf.FloorToInt((max.z - grid.origin.z) / grid.cellSize.z), 0, dim - 1);
+
+            float bestRayT = float.PositiveInfinity;
+            bool sawBackfaceReject = false;
+            bool sawNormalReject = false;
+            bool sawRawHit = false;
+
+            for (int z = z0; z <= z1; z++) {
+                for (int y = y0; y <= y1; y++) {
+                    int rowBase = (z * dim + y) * dim;
+                    for (int x = x0; x <= x1; x++) {
+                        int cell = rowBase + x;
+                        int start = grid.cellOffsets[cell];
+                        int end = grid.cellOffsets[cell + 1];
+                        for (int j = start; j < end; j++) {
+                            int tri = grid.cellTriangles[j];
+                            int i0 = triangles[tri * 3];
+                            int i1 = triangles[tri * 3 + 1];
+                            int i2 = triangles[tri * 3 + 2];
+                            if (!RayTriangle(rayOrigin, rayDir, verts[i0], verts[i1], verts[i2],
+                                    rayLength, out float rayT, out float wa, out float wb, out float wc)) {
+                                continue;
+                            }
+                            sawRawHit = true;
+                            if (rayT >= bestRayT) continue;
+
+                            Vector3 sourceNormal = faceNormals != null && tri < faceNormals.Length
+                                ? faceNormals[tri]
+                                : Vector3.zero;
+                            sourceNormal = SafeNormalize(sourceNormal,
+                                Vector3.Cross(verts[i1] - verts[i0], verts[i2] - verts[i0]));
+
+                            if (rejectBackfaces && Vector3.Dot(rayDir, sourceNormal) >= -1e-5f) {
+                                sawBackfaceReject = true;
+                                continue;
+                            }
+
+                            float normalDot = Vector3.Dot(compareNormal, sourceNormal);
+                            if (minNormalDot > -1.01f && normalDot < minNormalDot) {
+                                sawNormalReject = true;
+                                continue;
+                            }
+
+                            Vector3 point = rayOrigin + rayDir * rayT;
+                            bestRayT = rayT;
+                            result.triangleIndex = tri;
+                            result.point = point;
+                            result.wa = wa;
+                            result.wb = wb;
+                            result.wc = wc;
+                            result.distance = (point - targetPoint).magnitude;
+                            result.normalDot = normalDot;
+                            result.rejectReason = RejectReason.None;
+                        }
+                    }
+                }
+            }
+
+            if (result.triangleIndex >= 0) return result;
+            if (sawNormalReject) result.rejectReason = RejectReason.NormalAngle;
+            else if (sawBackfaceReject) result.rejectReason = RejectReason.Backface;
+            else if (sawRawHit) result.rejectReason = RejectReason.NormalAngle;
+            else result.rejectReason = RejectReason.RayMiss;
+            return result;
+        }
+
+        internal static bool RayTriangle(
+                Vector3 origin,
+                Vector3 dir,
+                Vector3 a,
+                Vector3 b,
+                Vector3 c,
+                float maxDistance,
+                out float rayT,
+                out float wa,
+                out float wb,
+                out float wc) {
+            rayT = 0f;
+            wa = wb = wc = 0f;
+
+            Vector3 edge1 = b - a;
+            Vector3 edge2 = c - a;
+            Vector3 pvec = Vector3.Cross(dir, edge2);
+            float det = Vector3.Dot(edge1, pvec);
+            if (Mathf.Abs(det) < 1e-8f) return false;
+
+            float invDet = 1f / det;
+            Vector3 tvec = origin - a;
+            float u = Vector3.Dot(tvec, pvec) * invDet;
+            if (u < -1e-6f || u > 1f + 1e-6f) return false;
+
+            Vector3 qvec = Vector3.Cross(tvec, edge1);
+            float v = Vector3.Dot(dir, qvec) * invDet;
+            if (v < -1e-6f || u + v > 1f + 1e-6f) return false;
+
+            float t = Vector3.Dot(edge2, qvec) * invDet;
+            if (t < -1e-6f || t > maxDistance + 1e-6f) return false;
+
+            rayT = Mathf.Max(0f, t);
+            wb = Mathf.Clamp01(u);
+            wc = Mathf.Clamp01(v);
+            wa = Mathf.Clamp01(1f - wb - wc);
+            float sum = wa + wb + wc;
+            if (sum > 1e-6f) {
+                wa /= sum;
+                wb /= sum;
+                wc /= sum;
+            }
+            return true;
         }
 
         // -----------------------------------------------------------------
@@ -477,6 +679,13 @@ namespace WhyKnot.AvatarQol.Tools {
             BoundingBox,
         }
 
+        internal enum CorrespondenceMode {
+            LegacyClosestPoint,
+            NormalRaycast,
+            BidirectionalNormalRaycast,
+            NormalAwareNearest,
+        }
+
         internal struct TransferOptions {
             public Mesh sourceMesh;
             public int sourceSubmesh;
@@ -492,6 +701,12 @@ namespace WhyKnot.AvatarQol.Tools {
             public Color fallbackColor;
             public int supersample;
             public int paddingPixels;
+            public CorrespondenceMode correspondenceMode;
+            public float rayFrontalDistance;
+            public float rayRearDistance;
+            public float normalAngleLimitDegrees;
+            public bool rejectBackfaces;
+            public bool writeDiagnosticMaps;
             // Coarse phase progress: 0.0 setup, ~0.2 after rasterize,
             // ~0.95 after parallel transfer, 1.0 done. Called only from
             // the main thread, not the worker threads.
@@ -507,6 +722,15 @@ namespace WhyKnot.AvatarQol.Tools {
             public int supersample;
             public int paddingPixels;
             public int paddedTexels;
+            public CorrespondenceMode correspondenceMode;
+            public int rejectedByRayMiss;
+            public int rejectedByNormalAngle;
+            public int rejectedByBackface;
+            public int nearestFallbackUsed;
+            public Texture2D hitDistanceMap;
+            public Texture2D normalDotMap;
+            public Texture2D rejectReasonMap;
+            public Texture2D sourceTriangleMap;
         }
 
         internal static TransferResult Transfer(TransferOptions opt) {
@@ -530,9 +754,11 @@ namespace WhyKnot.AvatarQol.Tools {
             var sourceVerts = TransformVertices(opt.sourceMesh.vertices, sourceToCommon);
             var sourceUvs   = opt.sourceMesh.uv;
             var sourceTris  = ResolveTriangles(opt.sourceMesh, opt.sourceSubmesh);
+            var sourceFaceNormals = ComputeFaceNormals(sourceVerts, sourceTris);
             var targetVerts = TransformVertices(opt.targetMesh.vertices, targetToCommon);
             var targetUvs   = opt.targetMesh.uv;
             var targetTris  = ResolveTriangles(opt.targetMesh, opt.targetSubmesh);
+            var targetNormals = TransformNormals(ResolveNormals(opt.targetMesh), targetToCommon);
 
             int gridDim = opt.gridDim > 0
                 ? opt.gridDim
@@ -542,6 +768,14 @@ namespace WhyKnot.AvatarQol.Tools {
             int samplesPerAxis = Mathf.Clamp(opt.supersample <= 0 ? 1 : opt.supersample, 1, 4);
             int sampleCount = samplesPerAxis * samplesPerAxis;
             int paddingPixels = Mathf.Clamp(opt.paddingPixels, 0, 128);
+            var mode = opt.correspondenceMode;
+            float frontalDistance = opt.rayFrontalDistance > 0f
+                ? opt.rayFrontalDistance
+                : Mathf.Max(opt.maxDistance, 0.08f);
+            float rearDistance = opt.rayRearDistance > 0f
+                ? opt.rayRearDistance
+                : Mathf.Max(opt.maxDistance, 0.08f);
+            float minNormalDot = MinNormalDot(opt.normalAngleLimitDegrees);
             opt.onProgress?.Invoke(0.15f);
 
             // Cache source pixels for thread-safe bilinear sampling. The
@@ -557,8 +791,16 @@ namespace WhyKnot.AvatarQol.Tools {
             var sumB = new ushort[outputPixels.Length];
             var sumA = new ushort[outputPixels.Length];
             var acceptedSamples = new byte[outputPixels.Length];
+            Color32[] debugDistance = opt.writeDiagnosticMaps ? new Color32[outputPixels.Length] : null;
+            Color32[] debugNormal = opt.writeDiagnosticMaps ? new Color32[outputPixels.Length] : null;
+            Color32[] debugReject = opt.writeDiagnosticMaps ? new Color32[outputPixels.Length] : null;
+            Color32[] debugTriangle = opt.writeDiagnosticMaps ? new Color32[outputPixels.Length] : null;
 
             int rejectedCounter = 0;
+            int rayMissCounter = 0;
+            int normalRejectedCounter = 0;
+            int backfaceRejectedCounter = 0;
+            int nearestFallbackCounter = 0;
             float maxDistObserved = 0f;
             object statsLock = new object();
 
@@ -576,6 +818,10 @@ namespace WhyKnot.AvatarQol.Tools {
                     // through a single lock once per row.
                     Parallel.For(0, res, row => {
                         int localRejected = 0;
+                        int localRayMiss = 0;
+                        int localNormalRejected = 0;
+                        int localBackfaceRejected = 0;
+                        int localFallback = 0;
                         float localMaxDist = 0f;
                         int rowBase = row * res;
                         for (int x = 0; x < res; x++) {
@@ -589,14 +835,32 @@ namespace WhyKnot.AvatarQol.Tools {
                             Vector3 tp = targetVerts[ti0] * sample.wa
                                        + targetVerts[ti1] * sample.wb
                                        + targetVerts[ti2] * sample.wc;
+                            Vector3 targetNormal = InterpolateNormal(
+                                targetNormals, targetVerts, targetTris,
+                                t, ti0, ti1, ti2,
+                                sample.wa, sample.wb, sample.wc);
 
-                            var hit = QueryClosest(grid, sourceVerts, sourceTris, tp);
-                            if (hit.triangleIndex < 0) continue;
+                            ProjectionHit hit = ResolveCorrespondence(
+                                mode, grid, sourceVerts, sourceTris, sourceFaceNormals,
+                                tp, targetNormal,
+                                frontalDistance, rearDistance,
+                                minNormalDot, opt.rejectBackfaces);
+
+                            if (hit.triangleIndex < 0) {
+                                CountReject(hit.rejectReason, ref localRayMiss, ref localNormalRejected, ref localBackfaceRejected);
+                                WriteRejectDebug(debugReject, idx, hit.rejectReason);
+                                continue;
+                            }
+
                             if (hit.distance > localMaxDist) localMaxDist = hit.distance;
                             if (opt.maxDistance > 0f && hit.distance > opt.maxDistance) {
                                 localRejected++;
+                                WriteRejectDebug(debugReject, idx, RejectReason.Distance);
                                 continue;
                             }
+
+                            if (mode == CorrespondenceMode.NormalAwareNearest) localFallback++;
+
                             int si0 = sourceTris[hit.triangleIndex * 3];
                             int si1 = sourceTris[hit.triangleIndex * 3 + 1];
                             int si2 = sourceTris[hit.triangleIndex * 3 + 2];
@@ -609,10 +873,22 @@ namespace WhyKnot.AvatarQol.Tools {
                             sumB[idx] = (ushort)(sumB[idx] + color.b);
                             sumA[idx] = (ushort)(sumA[idx] + color.a);
                             acceptedSamples[idx]++;
+                            WriteAcceptDebug(
+                                debugDistance, debugNormal, debugReject, debugTriangle,
+                                idx, hit, Mathf.Max(opt.maxDistance, frontalDistance + rearDistance));
                         }
-                        if (localRejected > 0 || localMaxDist > 0f) {
+                        if (localRejected > 0
+                                || localRayMiss > 0
+                                || localNormalRejected > 0
+                                || localBackfaceRejected > 0
+                                || localFallback > 0
+                                || localMaxDist > 0f) {
                             lock (statsLock) {
                                 rejectedCounter += localRejected;
+                                rayMissCounter += localRayMiss;
+                                normalRejectedCounter += localNormalRejected;
+                                backfaceRejectedCounter += localBackfaceRejected;
+                                nearestFallbackCounter += localFallback;
                                 if (localMaxDist > maxDistObserved) maxDistObserved = localMaxDist;
                             }
                         }
@@ -650,6 +926,10 @@ namespace WhyKnot.AvatarQol.Tools {
             };
             output.SetPixels32(outputPixels);
             output.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+            Texture2D hitDistanceMap = CreateDebugTexture(debugDistance, res, "WkUvTextureTransfer_HitDistance");
+            Texture2D normalDotMap = CreateDebugTexture(debugNormal, res, "WkUvTextureTransfer_NormalDot");
+            Texture2D rejectReasonMap = CreateDebugTexture(debugReject, res, "WkUvTextureTransfer_RejectReason");
+            Texture2D sourceTriangleMap = CreateDebugTexture(debugTriangle, res, "WkUvTextureTransfer_SourceTriangle");
             opt.onProgress?.Invoke(1f);
 
             return new TransferResult {
@@ -661,7 +941,204 @@ namespace WhyKnot.AvatarQol.Tools {
                 supersample         = samplesPerAxis,
                 paddingPixels       = paddingPixels,
                 paddedTexels        = paddedTexels,
+                correspondenceMode  = mode,
+                rejectedByRayMiss   = rayMissCounter,
+                rejectedByNormalAngle = normalRejectedCounter,
+                rejectedByBackface  = backfaceRejectedCounter,
+                nearestFallbackUsed = nearestFallbackCounter,
+                hitDistanceMap      = hitDistanceMap,
+                normalDotMap        = normalDotMap,
+                rejectReasonMap     = rejectReasonMap,
+                sourceTriangleMap   = sourceTriangleMap,
             };
+        }
+
+        private static ProjectionHit ResolveCorrespondence(
+                CorrespondenceMode mode,
+                SpatialGrid grid,
+                Vector3[] sourceVerts,
+                int[] sourceTris,
+                Vector3[] sourceFaceNormals,
+                Vector3 targetPoint,
+                Vector3 targetNormal,
+                float frontalDistance,
+                float rearDistance,
+                float minNormalDot,
+                bool rejectBackfaces) {
+            switch (mode) {
+                case CorrespondenceMode.NormalRaycast:
+                    return QueryProjected(
+                        grid, sourceVerts, sourceTris, sourceFaceNormals,
+                        targetPoint, targetNormal,
+                        frontalDistance, rearDistance,
+                        minNormalDot, rejectBackfaces,
+                        bidirectional: false);
+
+                case CorrespondenceMode.BidirectionalNormalRaycast:
+                    return QueryProjected(
+                        grid, sourceVerts, sourceTris, sourceFaceNormals,
+                        targetPoint, targetNormal,
+                        frontalDistance, rearDistance,
+                        minNormalDot, rejectBackfaces,
+                        bidirectional: true);
+
+                case CorrespondenceMode.NormalAwareNearest:
+                    return QueryNormalAwareNearest(
+                        grid, sourceVerts, sourceTris, sourceFaceNormals,
+                        targetPoint, targetNormal, minNormalDot, rejectBackfaces);
+
+                case CorrespondenceMode.LegacyClosestPoint:
+                default:
+                    var hit = QueryClosest(grid, sourceVerts, sourceTris, targetPoint);
+                    return new ProjectionHit {
+                        triangleIndex = hit.triangleIndex,
+                        point = hit.point,
+                        wa = hit.wa,
+                        wb = hit.wb,
+                        wc = hit.wc,
+                        distance = hit.distance,
+                        normalDot = 1f,
+                        rejectReason = hit.triangleIndex >= 0 ? RejectReason.None : RejectReason.RayMiss,
+                    };
+            }
+        }
+
+        private static ProjectionHit QueryNormalAwareNearest(
+                SpatialGrid grid,
+                Vector3[] verts,
+                int[] triangles,
+                Vector3[] faceNormals,
+                Vector3 targetPoint,
+                Vector3 targetNormal,
+                float minNormalDot,
+                bool rejectBackfaces) {
+            var hit = QueryClosest(grid, verts, triangles, targetPoint);
+            if (hit.triangleIndex < 0) {
+                return new ProjectionHit { triangleIndex = -1, rejectReason = RejectReason.RayMiss };
+            }
+
+            Vector3 sourceNormal = faceNormals != null && hit.triangleIndex < faceNormals.Length
+                ? faceNormals[hit.triangleIndex]
+                : Vector3.zero;
+            sourceNormal = SafeNormalize(sourceNormal, Vector3.up);
+            targetNormal = SafeNormalize(targetNormal, Vector3.up);
+            float normalDot = Vector3.Dot(targetNormal, sourceNormal);
+            if (minNormalDot > -1.01f && normalDot < minNormalDot) {
+                return new ProjectionHit {
+                    triangleIndex = -1,
+                    rejectReason = RejectReason.NormalAngle,
+                    distance = hit.distance,
+                    normalDot = normalDot,
+                };
+            }
+
+            return new ProjectionHit {
+                triangleIndex = hit.triangleIndex,
+                point = hit.point,
+                wa = hit.wa,
+                wb = hit.wb,
+                wc = hit.wc,
+                distance = hit.distance,
+                normalDot = normalDot,
+                rejectReason = RejectReason.None,
+            };
+        }
+
+        private static void CountReject(
+                RejectReason reason,
+                ref int rayMiss,
+                ref int normalRejected,
+                ref int backfaceRejected) {
+            switch (reason) {
+                case RejectReason.NormalAngle:
+                    normalRejected++;
+                    break;
+                case RejectReason.Backface:
+                    backfaceRejected++;
+                    break;
+                case RejectReason.Distance:
+                    break;
+                case RejectReason.RayMiss:
+                default:
+                    rayMiss++;
+                    break;
+            }
+        }
+
+        private static void WriteAcceptDebug(
+                Color32[] distanceMap,
+                Color32[] normalMap,
+                Color32[] rejectMap,
+                Color32[] triangleMap,
+                int idx,
+                ProjectionHit hit,
+                float distanceScale) {
+            if (distanceMap != null) {
+                float t = distanceScale > 1e-6f ? Mathf.Clamp01(hit.distance / distanceScale) : 0f;
+                distanceMap[idx] = new Color32(
+                    (byte)(t * 255f + 0.5f),
+                    (byte)((1f - t) * 255f + 0.5f),
+                    0,
+                    255);
+            }
+            if (normalMap != null) {
+                float t = Mathf.Clamp01((hit.normalDot + 1f) * 0.5f);
+                normalMap[idx] = new Color32(
+                    (byte)((1f - t) * 255f + 0.5f),
+                    (byte)(t * 255f + 0.5f),
+                    0,
+                    255);
+            }
+            if (rejectMap != null) {
+                rejectMap[idx] = new Color32(0, 210, 70, 255);
+            }
+            if (triangleMap != null) {
+                triangleMap[idx] = HashColor(hit.triangleIndex);
+            }
+        }
+
+        private static void WriteRejectDebug(Color32[] rejectMap, int idx, RejectReason reason) {
+            if (rejectMap == null) return;
+            switch (reason) {
+                case RejectReason.Distance:
+                    rejectMap[idx] = new Color32(255, 150, 0, 255);
+                    break;
+                case RejectReason.NormalAngle:
+                    rejectMap[idx] = new Color32(210, 0, 255, 255);
+                    break;
+                case RejectReason.Backface:
+                    rejectMap[idx] = new Color32(0, 180, 255, 255);
+                    break;
+                case RejectReason.RayMiss:
+                default:
+                    rejectMap[idx] = new Color32(255, 0, 0, 255);
+                    break;
+            }
+        }
+
+        private static Color32 HashColor(int value) {
+            unchecked {
+                uint x = (uint)(value + 1) * 747796405u + 2891336453u;
+                x = ((x >> ((int)(x >> 28) + 4)) ^ x) * 277803737u;
+                x = (x >> 22) ^ x;
+                byte r = (byte)(40 + (x & 0xBF));
+                byte g = (byte)(40 + ((x >> 8) & 0xBF));
+                byte b = (byte)(40 + ((x >> 16) & 0xBF));
+                return new Color32(r, g, b, 255);
+            }
+        }
+
+        private static Texture2D CreateDebugTexture(Color32[] pixels, int resolution, string name) {
+            if (pixels == null) return null;
+            var texture = new Texture2D(resolution, resolution, TextureFormat.RGBA32, mipChain: false, linear: true) {
+                hideFlags = HideFlags.HideAndDontSave,
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp,
+                name = name,
+            };
+            texture.SetPixels32(pixels);
+            texture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+            return texture;
         }
 
         private static byte AverageByte(int numerator, int denominator) {
@@ -783,6 +1260,108 @@ namespace WhyKnot.AvatarQol.Tools {
             var dst = new Vector3[src.Length];
             for (int i = 0; i < src.Length; i++) dst[i] = m.MultiplyPoint3x4(src[i]);
             return dst;
+        }
+
+        internal static Vector3[] TransformNormals(Vector3[] src, Matrix4x4 m) {
+            if (src == null) return Array.Empty<Vector3>();
+            var dst = new Vector3[src.Length];
+            for (int i = 0; i < src.Length; i++) {
+                dst[i] = SafeNormalize(m.MultiplyVector(src[i]), Vector3.up);
+            }
+            return dst;
+        }
+
+        internal static Vector3[] ResolveNormals(Mesh mesh) {
+            if (mesh == null) return Array.Empty<Vector3>();
+            var normals = mesh.normals;
+            if (normals != null && normals.Length == mesh.vertexCount) return normals;
+            return ComputeAveragedNormals(mesh.vertices, mesh.triangles);
+        }
+
+        internal static Vector3[] ComputeAveragedNormals(Vector3[] verts, int[] triangles) {
+            if (verts == null) return Array.Empty<Vector3>();
+            var normals = new Vector3[verts.Length];
+            if (triangles != null) {
+                int triCount = triangles.Length / 3;
+                for (int t = 0; t < triCount; t++) {
+                    int i0 = triangles[t * 3];
+                    int i1 = triangles[t * 3 + 1];
+                    int i2 = triangles[t * 3 + 2];
+                    if (i0 < 0 || i0 >= verts.Length
+                            || i1 < 0 || i1 >= verts.Length
+                            || i2 < 0 || i2 >= verts.Length) {
+                        continue;
+                    }
+                    Vector3 n = Vector3.Cross(verts[i1] - verts[i0], verts[i2] - verts[i0]);
+                    normals[i0] += n;
+                    normals[i1] += n;
+                    normals[i2] += n;
+                }
+            }
+            for (int i = 0; i < normals.Length; i++) {
+                normals[i] = SafeNormalize(normals[i], Vector3.up);
+            }
+            return normals;
+        }
+
+        internal static Vector3[] ComputeFaceNormals(Vector3[] verts, int[] triangles) {
+            if (verts == null || triangles == null) return Array.Empty<Vector3>();
+            int triCount = triangles.Length / 3;
+            var normals = new Vector3[triCount];
+            for (int t = 0; t < triCount; t++) {
+                int i0 = triangles[t * 3];
+                int i1 = triangles[t * 3 + 1];
+                int i2 = triangles[t * 3 + 2];
+                if (i0 < 0 || i0 >= verts.Length
+                        || i1 < 0 || i1 >= verts.Length
+                        || i2 < 0 || i2 >= verts.Length) {
+                    normals[t] = Vector3.up;
+                    continue;
+                }
+                normals[t] = SafeNormalize(
+                    Vector3.Cross(verts[i1] - verts[i0], verts[i2] - verts[i0]),
+                    Vector3.up);
+            }
+            return normals;
+        }
+
+        private static Vector3 InterpolateNormal(
+                Vector3[] normals,
+                Vector3[] verts,
+                int[] triangles,
+                int triangleIndex,
+                int i0,
+                int i1,
+                int i2,
+                float wa,
+                float wb,
+                float wc) {
+            if (normals != null
+                    && i0 >= 0 && i0 < normals.Length
+                    && i1 >= 0 && i1 < normals.Length
+                    && i2 >= 0 && i2 < normals.Length) {
+                return SafeNormalize(normals[i0] * wa + normals[i1] * wb + normals[i2] * wc, Vector3.up);
+            }
+            if (verts != null && triangles != null
+                    && triangleIndex >= 0
+                    && triangleIndex * 3 + 2 < triangles.Length
+                    && i0 >= 0 && i0 < verts.Length
+                    && i1 >= 0 && i1 < verts.Length
+                    && i2 >= 0 && i2 < verts.Length) {
+                return SafeNormalize(Vector3.Cross(verts[i1] - verts[i0], verts[i2] - verts[i0]), Vector3.up);
+            }
+            return Vector3.up;
+        }
+
+        private static float MinNormalDot(float angleDegrees) {
+            if (angleDegrees <= 0f || angleDegrees >= 179.9f) return -2f;
+            return Mathf.Cos(angleDegrees * Mathf.Deg2Rad);
+        }
+
+        private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback) {
+            float sqr = value.sqrMagnitude;
+            if (sqr < 1e-12f || float.IsNaN(sqr)) return fallback;
+            return value / Mathf.Sqrt(sqr);
         }
 
         internal static int[] ResolveTriangles(Mesh mesh, int submeshIndex) {
