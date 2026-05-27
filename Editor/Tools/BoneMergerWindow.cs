@@ -53,7 +53,6 @@ namespace WhyKnot.AvatarQol.Tools {
         private readonly List<string> _resultDetail = new List<string>();
         private Vector2 _scroll;
         private Vector2 _pageScroll;
-        private double _nextAnimatedRepaint;
 
         // ------ Public entry points ----------------------------------------
 
@@ -74,19 +73,6 @@ namespace WhyKnot.AvatarQol.Tools {
                            go.GetComponentInChildren<Animator>(true);
             if (animator != null) _animator = animator;
             ClearResults();
-        }
-
-        private void OnEnable() {
-            EditorApplication.update -= RepaintAnimatedChrome;
-            EditorApplication.update += RepaintAnimatedChrome;
-        }
-
-        private void OnDisable() {
-            EditorApplication.update -= RepaintAnimatedChrome;
-        }
-
-        private void RepaintAnimatedChrome() {
-            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         // ------ GUI --------------------------------------------------------

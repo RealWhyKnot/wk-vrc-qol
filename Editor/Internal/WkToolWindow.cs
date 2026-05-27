@@ -44,8 +44,8 @@ namespace WhyKnot.AvatarQol.Internal {
         /// <summary>When true (default), the WhyKnot brand signature renders at the bottom.</summary>
         protected virtual bool ShowBrandFooter => true;
 
-        /// <summary>When true (default), title chrome uses a subtle animated accent line.</summary>
-        protected virtual bool AnimateChrome => true;
+        /// <summary>When true (default), title chrome uses the shared accent divider.</summary>
+        protected virtual bool ShowAccentDivider => true;
 
         /// <summary>Subclass-supplied window body. Called inside the theme scope.</summary>
         protected abstract void OnBodyGUI();
@@ -65,18 +65,9 @@ namespace WhyKnot.AvatarQol.Internal {
         protected virtual void OnEnable() {
             titleContent = WkStyles.TitleContent(Title);
             minSize = InitialMinSize;
-            EditorApplication.update -= RepaintAnimatedChrome;
-            if (AnimateChrome) EditorApplication.update += RepaintAnimatedChrome;
         }
 
         protected virtual void OnDisable() {
-            EditorApplication.update -= RepaintAnimatedChrome;
-        }
-
-        private double _nextAnimatedRepaint;
-        private void RepaintAnimatedChrome() {
-            if (!AnimateChrome) return;
-            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         private Vector2 _scroll;
@@ -85,7 +76,7 @@ namespace WhyKnot.AvatarQol.Internal {
             using (WkStyles.Scope(Theme)) {
                 using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
                     WkStyles.TitleBar(Title, HelpUrl);
-                    if (AnimateChrome) WkStyles.AnimatedAccentLine();
+                    if (ShowAccentDivider) WkStyles.AnimatedAccentLine();
                     else WkStyles.Divider();
 
                     if (ShowScrollView) {

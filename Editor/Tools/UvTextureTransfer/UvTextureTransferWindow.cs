@@ -69,7 +69,6 @@ namespace WhyKnot.AvatarQol.Tools {
         private UvTextureTransferCore.TransferResult _lastResult;
         private bool _hasResult;
         private Vector2 _pageScroll;
-        private double _nextAnimatedRepaint;
 
         // ---- Prefs keys ----
         private const string PrefsPrefix     = "dev.whyknot.wk-vrc-qol.UvTextureTransfer.";
@@ -105,18 +104,11 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             LoadPrefs();
             RefreshSourceMeshOptions();
-            EditorApplication.update -= RepaintAnimatedChrome;
-            EditorApplication.update += RepaintAnimatedChrome;
         }
 
         private void OnDisable() {
             ReleaseResultTextures();
             SavePrefs();
-            EditorApplication.update -= RepaintAnimatedChrome;
-        }
-
-        private void RepaintAnimatedChrome() {
-            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         // ---- GUI ----

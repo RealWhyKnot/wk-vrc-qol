@@ -28,7 +28,6 @@ namespace WhyKnot.AvatarQol.Tools {
         private readonly List<PhysBoneClippingAnalyzer.Issue> _issues =
             new List<PhysBoneClippingAnalyzer.Issue>();
         private Vector2 _pageScroll;
-        private double _nextAnimatedRepaint;
         private string _scanSummary = "";
         private int _lastSurfaceRendererCount;
 
@@ -51,23 +50,16 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             SceneView.duringSceneGui += OnSceneGui;
             EditorApplication.update += OnEditorUpdate;
-            EditorApplication.update -= RepaintAnimatedChrome;
-            EditorApplication.update += RepaintAnimatedChrome;
         }
 
         private void OnDisable() {
             SceneView.duringSceneGui -= OnSceneGui;
             EditorApplication.update -= OnEditorUpdate;
-            EditorApplication.update -= RepaintAnimatedChrome;
             StopPreview();
         }
 
         private void OnDestroy() {
             StopPreview();
-        }
-
-        private void RepaintAnimatedChrome() {
-            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         private void OnGUI() {

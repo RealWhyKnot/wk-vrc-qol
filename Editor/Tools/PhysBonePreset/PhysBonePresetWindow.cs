@@ -50,7 +50,6 @@ namespace WhyKnot.AvatarQol.Tools {
         private Vector2 _selectionScroll;
         private Vector2 _planScroll;
         private Vector2 _pageScroll;
-        private double _nextAnimatedRepaint;
 
         // Post-apply tweak state. After Apply, we cache the just-created
         // components and a snapshot of their original parameters so the
@@ -84,16 +83,6 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             DiscoverPresets();
             if (_analysis == null) RebuildAnalysis();
-            EditorApplication.update -= RepaintAnimatedChrome;
-            EditorApplication.update += RepaintAnimatedChrome;
-        }
-
-        private void OnDisable() {
-            EditorApplication.update -= RepaintAnimatedChrome;
-        }
-
-        private void RepaintAnimatedChrome() {
-            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         private void DiscoverPresets() {

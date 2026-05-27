@@ -327,24 +327,22 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
             EditorGUI.DrawRect(rect, ColorDivider);
         }
 
-        /// <summary>Theme-coloured animation accent. Deterministic for tests when a time value is supplied.</summary>
+        /// <summary>Theme accent colour kept as a compatibility helper for older call sites.</summary>
         public static Color AnimatedAccentColor(double timeSeconds) {
-            var pulse = 0.5f + 0.5f * Mathf.Sin((float)timeSeconds * 2.4f);
-            return Color.Lerp(ColorInfo, ColorAccent, pulse);
+            return ColorAccent;
         }
 
-        /// <summary>Subtle animated title underline for Editor windows.</summary>
+        /// <summary>Static title divider kept under the old name for source compatibility.</summary>
         public static void AnimatedAccentLine(float thickness = 2f, double? timeSeconds = null) {
             var rect = EditorGUILayout.GetControlRect(false, Mathf.Max(1f, thickness), GUILayout.ExpandWidth(true));
-            EditorGUI.DrawRect(rect, ColorDividerSubtle);
+            var line = new Rect(rect.x, rect.y + Mathf.Floor((rect.height - 1f) * 0.5f), rect.width, 1f);
+            EditorGUI.DrawRect(line, ColorDividerSubtle);
             if (rect.width <= 1f) return;
 
-            var now = timeSeconds ?? EditorApplication.timeSinceStartup;
-            var cycle = Mathf.Repeat((float)now, 2.8f) / 2.8f;
-            var gleamWidth = Mathf.Clamp(rect.width * 0.28f, 48f, 180f);
-            var x = Mathf.Lerp(rect.x - gleamWidth, rect.xMax, cycle);
-            var gleam = new Rect(x, rect.y, gleamWidth, rect.height);
-            EditorGUI.DrawRect(gleam, AnimatedAccentColor(now));
+            var accent = ColorAccent;
+            accent.a = Mathf.Min(accent.a, 0.7f);
+            var accentWidth = Mathf.Min(rect.width, Mathf.Clamp(rect.width * 0.18f, 42f, 96f));
+            EditorGUI.DrawRect(new Rect(rect.x, line.y, accentWidth, 1f), accent);
         }
 
         /// <summary>Lower-contrast divider for dense row lists; reads ColorDividerSubtle.</summary>
@@ -554,7 +552,10 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
         }
 
         public static GUIContent TitleContent(string title, string tooltip = null) {
-            return new GUIContent(title, BrandLogoTexture, tooltip ?? title);
+            // The in-window title bar owns the brand mark. Keeping the
+            // native Unity tab text-only avoids double logos when the tab
+            // and custom title bar are both visible.
+            return new GUIContent(title, tooltip ?? title);
         }
 
         public static bool BrandLogoMark(float width = 40f, float height = 22f, float alpha = 0.9f) {
@@ -599,10 +600,9 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
             return null;
         }
 
-        /// <summary>Draw the standard WhyKnot footer with a gently animated heart.</summary>
+        /// <summary>Draw the standard WhyKnot footer.</summary>
         public static void BrandFooter(double? timeSeconds = null) {
-            var now = timeSeconds ?? EditorApplication.timeSinceStartup;
-            var heartColor = ColorUtility.ToHtmlStringRGB(AnimatedAccentColor(now));
+            var heartColor = ColorUtility.ToHtmlStringRGB(ColorAccent);
             var text = "Made with <color=#" + heartColor + ">\u2665</color> by WhyKnot";
             using (new EditorGUILayout.HorizontalScope(GUILayout.ExpandWidth(true), GUILayout.MinHeight(22))) {
                 if (BrandLogoTexture != null) {
@@ -622,13 +622,9 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
             BrandFooter();
         }
 
-        /// <summary>Throttle animated chrome repaints for windows that do not inherit WkToolWindow.</summary>
+        /// <summary>Compatibility no-op for windows that used to repaint animated chrome.</summary>
         public static void RepaintAnimatedChrome(EditorWindow window, ref double nextRepaintTime) {
-            if (window == null) return;
-            var now = EditorApplication.timeSinceStartup;
-            if (now < nextRepaintTime) return;
-            nextRepaintTime = now + (1.0 / 30.0);
-            window.Repaint();
+            nextRepaintTime = EditorApplication.timeSinceStartup + 1.0;
         }
 
         /// <summary>

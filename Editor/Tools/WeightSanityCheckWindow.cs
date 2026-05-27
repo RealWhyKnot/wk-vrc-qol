@@ -125,7 +125,6 @@ namespace WhyKnot.AvatarQol.Tools {
         private int _lastScanCenterVerts;
         private Vector2 _scroll;
         private Vector2 _pageScroll;
-        private double _nextAnimatedRepaint;
 
         // Preview state - at most one bone is animated at a time. Bone is
         // wobbled around its rest rotation; on stop we restore.
@@ -155,23 +154,16 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             SceneView.duringSceneGui += OnSceneGui;
             EditorApplication.update += OnEditorUpdate;
-            EditorApplication.update -= RepaintAnimatedChrome;
-            EditorApplication.update += RepaintAnimatedChrome;
         }
 
         private void OnDisable() {
             SceneView.duringSceneGui -= OnSceneGui;
             EditorApplication.update -= OnEditorUpdate;
-            EditorApplication.update -= RepaintAnimatedChrome;
             StopPreview();
         }
 
         private void OnDestroy() {
             StopPreview();
-        }
-
-        private void RepaintAnimatedChrome() {
-            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         // ------ GUI --------------------------------------------------------
