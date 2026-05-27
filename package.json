@@ -3,7 +3,7 @@
   "displayName": "Avatar QoL",
   "version": "1.4.0-beta.2",
   "unity": "2022.3",
-  "description": "Editor tools for VRChat avatars: Weight Sanity Check, PhysBone Presets, PhysBone Clipping Risks, Bone Merger, Mask Painter, Auto Mesh Fixes.",
+  "description": "Editor tools for VRChat avatars: Weight Sanity Check, PhysBone Presets, PhysBone Clipping Fixer, Bone Merger, and Mask Painter.",
   "author": {
     "name": "WhyKnot",
     "url": "https://whyknot.dev"

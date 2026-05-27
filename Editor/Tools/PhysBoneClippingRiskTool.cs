@@ -1,6 +1,6 @@
 // PhysBoneClippingRiskTool.cs
 //
-// Entry points for the standalone PhysBone clipping risk window. This scan is
+// Entry points for the standalone PhysBone clipping fix window. This scan is
 // intentionally separate from Weight Sanity Check because it can be much more
 // expensive and most users only need it for one mesh at a time.
 
@@ -12,8 +12,8 @@ namespace WhyKnot.AvatarQol.Tools {
     [InitializeOnLoad]
     internal static class PhysBoneClippingRiskTool {
 
-        private const string ToolsMenuPath = "Tools/WhyKnot/wk-vrc-qol/PhysBone Clipping Risks...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Check PhysBone clipping...";
+        private const string ToolsMenuPath = "Tools/WhyKnot/wk-vrc-qol/PhysBone Clipping Fixer...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Fix PhysBone clipping...";
 
         static PhysBoneClippingRiskTool() { }
 

@@ -2,6 +2,9 @@
 
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.Components;
+using WhyKnot.AvatarQol.PhysBoneClipping;
+using WhyKnot.AvatarQol.Intent;
 using WhyKnot.AvatarQol.Internal.Styling;
 
 namespace WhyKnot.AvatarQol.Tools {
@@ -13,23 +16,29 @@ namespace WhyKnot.AvatarQol.Tools {
                 using (new EditorGUI.DisabledScope(!CanScan())) {
                     if (WkStyles.PrimaryButtonInline(
                             new GUIContent("Scan for clipping",
-                                "Run the PhysBone clipping-risk estimate for the moving mesh and the comparison meshes listed above."),
+                                "Check the moving mesh for actual penetration into itself and the comparison meshes listed above."),
                             GUILayout.MinWidth(140))) {
                         Scan();
                     }
                 }
-                using (new EditorGUI.DisabledScope(_previewBone == null)) {
+                using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
+                    if (WkStyles.PrimaryButtonInline(
+                            new GUIContent("Add fix component",
+                                "Non-destructive. Adds or updates a WhyKnotPhysBoneClippingFixIntent on the moving mesh. At play mode and avatar upload it clones the current mesh in memory and pushes it out of the comparison meshes."),
+                            GUILayout.Width(160))) {
+                        SaveFixAsComponent();
+                    }
                     if (GUILayout.Button(
-                            new GUIContent("Stop wobble",
-                                "Restore the currently-wobbled bone to its rest rotation."),
-                            GUILayout.Height(28), GUILayout.Width(110))) {
-                        StopPreview();
+                            new GUIContent("Apply destructive",
+                                "Clone the moving mesh to a generated .asset now, rewire the renderer to that clone, and write the clipping fix into the clone. The original imported mesh asset is not modified."),
+                            GUILayout.Height(28), GUILayout.Width(140))) {
+                        ApplyDestructiveFix();
                     }
                 }
                 using (new EditorGUI.DisabledScope(_issues.Count == 0 && string.IsNullOrEmpty(_scanSummary))) {
                     if (GUILayout.Button(
                             new GUIContent("Clear",
-                                "Drop the current risk list and clear Scene view markers."),
+                                "Drop the current warning list and clear Scene view markers."),
                             GUILayout.Height(28), GUILayout.Width(70))) {
                         ClearResults();
                     }
@@ -44,19 +53,24 @@ namespace WhyKnot.AvatarQol.Tools {
         private void DrawIssues() {
             using (new EditorGUILayout.HorizontalScope()) {
                 EditorGUILayout.LabelField(
-                    new GUIContent(_issues.Count > 0 ? $"Risks ({_issues.Count})" : "Risks",
-                        "Rows where the estimated PhysBone motion envelope reaches nearby mesh surface."),
+                    new GUIContent(_issues.Count > 0 ? $"Warnings ({_issues.Count})" : "Warnings",
+                        "Rows where the moving mesh is inside or intersecting a comparison surface."),
                     WkStyles.SubsectionTitle);
                 GUILayout.FlexibleSpace();
-                if (_lastSurfaceRendererCount > 1) {
-                    EditorGUILayout.LabelField($"{_lastSurfaceRendererCount} surface meshes sampled", WkStyles.Muted, GUILayout.Width(170));
+                if (_lastSurfaceRendererCount > 0) {
+                    EditorGUILayout.LabelField($"{_lastSurfaceRendererCount} comparison mesh(es)", WkStyles.Muted, GUILayout.Width(170));
                 }
+            }
+
+            if (_issues.Count > 0) {
+                WkStyles.Notice(NoticeKind.Warning,
+                    $"{_issues.Count} clipping warning(s) found. Use the component flow for fixes that should survive mesh re-imports; use destructive apply for a generated mesh asset you can inspect now.");
             }
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
                 if (_issues.Count == 0) {
                     EditorGUILayout.LabelField(
-                        _scanSummary == "" ? "Pick one moving mesh, add any comparison meshes, then scan." : "No likely PhysBone clipping risks found.",
+                        _scanSummary == "" ? "Pick one moving mesh, add a body/comparison mesh, then scan." : "No clipping warnings found.",
                         EditorStyles.centeredGreyMiniLabel);
                 } else {
                     foreach (var issue in _issues) {
@@ -67,20 +81,20 @@ namespace WhyKnot.AvatarQol.Tools {
             }
         }
 
-        private void DrawIssueRow(PhysBoneClippingAnalyzer.Issue issue) {
-            var severityColor = issue.Severity == PhysBoneClippingAnalyzer.Severity.High
-                ? AvatarQolCategoryColors.Humanoid
-                : WkStyles.ColorWarning;
-            var severityText = issue.Severity == PhysBoneClippingAnalyzer.Severity.High ? "high" : "medium";
-            string boneName = issue.DrivenBone != null ? issue.DrivenBone.name : "(destroyed)";
+        private void DrawIssueRow(PhysBoneClippingFixer.Issue issue) {
+            var severityColor = issue.Kind == PhysBoneClippingFixer.IssueKind.SelfIntersection
+                ? AvatarQolCategoryColors.Spatial
+                : AvatarQolCategoryColors.Humanoid;
+            var severityText = issue.Kind == PhysBoneClippingFixer.IssueKind.SelfIntersection ? "self" : "clip";
+            string comparison = string.IsNullOrEmpty(issue.ComparisonPath) ? "(none)" : issue.ComparisonPath;
             using (new EditorGUILayout.HorizontalScope()) {
                 WkStyles.BadgePill(severityText, severityColor,
-                    issue.Severity == PhysBoneClippingAnalyzer.Severity.High
-                        ? "No effective collider coverage or already-small clearance. This deserves attention."
-                        : "Collider coverage exists or the estimated overlap is smaller, but the area is still worth checking.");
+                    issue.Kind == PhysBoneClippingFixer.IssueKind.SelfIntersection
+                        ? "The target mesh has intersecting non-adjacent triangles."
+                        : "The target mesh is inside or intersecting a comparison mesh.");
                 EditorGUILayout.LabelField(
                     new GUIContent(
-                        $"v#{issue.VertexIndex}  {boneName}  move~{issue.EstimatedMotion * 100f:0.0}cm  clearance {issue.Clearance * 100f:0.0}cm",
+                        $"v#{issue.VertexIndex}  depth {issue.PenetrationDepth * 1000f:0.0}mm  vs {comparison}",
                         issue.Reason),
                     WkStyles.Mono);
                 GUILayout.FlexibleSpace();
@@ -91,29 +105,20 @@ namespace WhyKnot.AvatarQol.Tools {
                         EditorGUIUtility.PingObject(issue.Renderer);
                     }
                 }
-                if (GUILayout.Button(new GUIContent("Frame", "Frame the risky vertex in Scene view."),
+                if (GUILayout.Button(new GUIContent("Frame", "Frame the clipping point in Scene view."),
                         WkStyles.MiniRowButton, GUILayout.Width(48))) {
                     Frame(issue.WorldPosition, 0.18f);
                 }
-                using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
-                    if (GUILayout.Button(new GUIContent("Reveal", "Select and ping the PhysBone-driven transform."),
-                            WkStyles.MiniRowButton, GUILayout.Width(52))) {
-                        Selection.activeObject = issue.DrivenBone;
-                        EditorGUIUtility.PingObject(issue.DrivenBone);
-                        FlashHighlight(issue.WorldPosition);
-                    }
-                    bool isPreviewing = _previewBone == issue.DrivenBone && issue.DrivenBone != null;
-                    if (GUILayout.Button(
-                            new GUIContent(isPreviewing ? "Stop" : "Wobble",
-                                "Temporarily wobble the driven transform so you can inspect likely clipping. This does not move the Scene camera."),
+                using (new EditorGUI.DisabledScope(issue.ComparisonRenderer == null)) {
+                    if (GUILayout.Button(new GUIContent("Surface", "Ping the comparison renderer or self-intersecting target surface."),
                             WkStyles.MiniRowButton, GUILayout.Width(58))) {
-                        if (isPreviewing) StopPreview();
-                        else StartPreview(issue.DrivenBone);
+                        Selection.activeObject = issue.ComparisonRenderer;
+                        EditorGUIUtility.PingObject(issue.ComparisonRenderer);
                     }
                 }
             }
             EditorGUILayout.LabelField("   " + issue.Reason, WkStyles.Muted);
-            EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", WkStyles.Muted);
+            EditorGUILayout.LabelField($"   nearest surface: {comparison}", WkStyles.Muted);
         }
 
         private void ClearResults() {
@@ -134,6 +139,71 @@ namespace WhyKnot.AvatarQol.Tools {
             _flashPos = worldPos;
             _flashUntil = EditorApplication.timeSinceStartup + 2.0;
             SceneView.RepaintAll();
+        }
+
+        private void SaveFixAsComponent() {
+            if (_targetRenderer == null || _issues.Count == 0) return;
+            string msg =
+                "Add or update a PhysBone Clipping Fix component on the moving mesh?\n\n" +
+                "At play-mode entry and avatar upload, it re-scans this renderer's current mesh against the saved comparison mesh list, clones the target mesh in memory, and pushes clipping vertices out. The source mesh asset is never modified.";
+            if (!EditorUtility.DisplayDialog("Add fix component", msg, "Add component", "Cancel")) return;
+
+            int undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Avatar QoL: Add PhysBone clipping fix component");
+            var intent = _targetRenderer.GetComponent<WhyKnotPhysBoneClippingFixIntent>();
+            if (intent == null) {
+                intent = Undo.AddComponent<WhyKnotPhysBoneClippingFixIntent>(_targetRenderer.gameObject);
+            } else {
+                Undo.RecordObject(intent, "Update PhysBone clipping fix component");
+            }
+
+            intent.targetRenderer = _targetRenderer;
+            if (intent.comparisonRenderers == null) intent.comparisonRenderers = new System.Collections.Generic.List<SkinnedMeshRenderer>();
+            intent.comparisonRenderers.Clear();
+            foreach (var renderer in BuildSurfaceList()) {
+                if (renderer != null && renderer != _targetRenderer && !intent.comparisonRenderers.Contains(renderer)) {
+                    intent.comparisonRenderers.Add(renderer);
+                }
+            }
+            intent.checkSelf = _checkSelf;
+            intent.insideTolerance = _insideTolerance;
+            intent.surfacePadding = _surfacePadding;
+            intent.maxFixPasses = _maxFixPasses;
+            EditorUtility.SetDirty(intent);
+            Undo.CollapseUndoOperations(undoGroup);
+
+            AvatarQolLogger.Instance.Info(
+                $"PhysBone clipping fix component saved on {_targetRenderer.name}: " +
+                $"{intent.comparisonRenderers.Count} comparison renderer(s), checkSelf={intent.checkSelf}.");
+        }
+
+        private void ApplyDestructiveFix() {
+            if (_targetRenderer == null || _issues.Count == 0) return;
+            if (AvatarIntentSessionState.IsAnyIntentSessionActive()) {
+                EditorUtility.DisplayDialog("Apply destructive fix",
+                    "Stop the active preview/play/build mesh session before writing a generated mesh asset.", "OK");
+                return;
+            }
+
+            string msg =
+                $"Apply a destructive clipping fix to {_targetRenderer.name}?\n\n" +
+                $"The target mesh will be cloned to {PhysBoneClippingFixer.GeneratedFolder}/, the renderer will be rewired to that clone, and the fix will be written into the clone. The original mesh asset is not modified.\n\n" +
+                "Ctrl+Z reverts the operation.";
+            if (!EditorUtility.DisplayDialog("Apply destructive fix", msg, "Apply", "Cancel")) return;
+
+            var result = PhysBoneClippingFixer.ApplyDestructive(
+                _targetRenderer,
+                BuildSurfaceList(),
+                BuildFixerSettings());
+            if (result.ConfigurationError) {
+                EditorUtility.DisplayDialog("Apply destructive fix", result.Summary, "OK");
+                return;
+            }
+
+            AvatarQolLogger.Instance.Info(
+                $"PhysBone clipping destructive fix: {result.Summary} " +
+                (result.ClonedPaths.Count > 0 ? $"Created {string.Join(", ", result.ClonedPaths)}." : ""));
+            Scan();
         }
     }
 }

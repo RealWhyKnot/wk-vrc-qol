@@ -1,11 +1,9 @@
 // PhysBoneClippingRiskWindowSourceTests.cs
 //
-// Cheap insurance against re-introducing the Auto Mesh Fixes coupling
-// that was removed in this release. PhysBoneClippingRiskWindow used to
-// hold a "Create mesh fix setup" workflow that auto-spawned
-// AutoTightenToBody components; after removal the file must remain free
-// of references to the deleted types. A regex over the file content
-// catches an accidental re-add long before a manual code review would.
+// Cheap insurance against re-introducing the removed Auto Mesh Fixes
+// coupling. The current PhysBone clipping workflow owns its component and
+// mesh write path directly; it should not reference the deleted mesh-fix
+// setup types or the old motion-reduction action.
 
 using System.IO;
 using NUnit.Framework;
@@ -41,7 +39,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 string text = File.ReadAllText(fullPath);
                 foreach (var token in banned) {
                     Assert.IsFalse(text.Contains(token),
-                        $"{relativePath} must not reference removed PhysBone Clipping Risks action '{token}'.");
+                        $"{relativePath} must not reference removed PhysBone clipping action '{token}'.");
                 }
             }
         }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.PhysBoneClipping;
 using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
@@ -18,50 +19,49 @@ namespace WhyKnot.AvatarQol.Tools {
             var surfaces = BuildSurfaceList();
             _lastSurfaceRendererCount = surfaces.Count;
             var log = _verboseLog ? new StringBuilder() : null;
-            log?.AppendLine("PhysBone Clipping Risks verbose log");
+            log?.AppendLine("PhysBone Clipping Fixer verbose log");
             log?.AppendLine($"  target={PathUtility.GetGameObjectPath(_targetRenderer.gameObject)}");
-            log?.AppendLine($"  comparisonRenderers={surfaces.Count - 1}, surfaceRenderers={surfaces.Count}");
-            log?.AppendLine($"  weightFloor={_weightFloor:F4}, clearanceMargin={_clearanceMargin:F3}, maxIssuesPerPhysBone={_maxIssuesPerPhysBone}");
+            log?.AppendLine($"  comparisonRenderers={surfaces.Count}, checkSelf={_checkSelf}");
+            log?.AppendLine($"  insideTolerance={_insideTolerance:F4}, surfacePadding={_surfacePadding:F3}, maxWarnings={_maxWarnings}");
 
             double start = EditorApplication.timeSinceStartup;
-            var settings = new PhysBoneClippingAnalyzer.Settings {
-                WeightFloor = _weightFloor,
-                ClearanceMargin = _clearanceMargin,
-                MaxIssuesPerPhysBone = _maxIssuesPerPhysBone,
-            };
-            _issues.AddRange(PhysBoneClippingAnalyzer.ScanOneMesh(
-                _animator,
+            var settings = BuildFixerSettings();
+            _issues.AddRange(PhysBoneClippingFixer.Scan(
                 _targetRenderer,
                 surfaces,
                 settings,
                 log));
             double elapsed = EditorApplication.timeSinceStartup - start;
 
-            int totalSources = settings.NativePhysBoneCount + settings.CustomPhysBoneCount;
-            string sourceText = settings.CustomPhysBoneCount > 0
-                ? $"{totalSources} PhysBone sources ({settings.CustomPhysBoneCount} generated/custom)"
-                : $"{totalSources} PhysBone sources";
-            string surfaceText = surfaces.Count == 1 ? "self only" : $"{surfaces.Count} surface meshes";
-            _scanSummary = $"Scanned 1 mesh vs {surfaceText} in {elapsed:0.0}s; {sourceText}; found {_issues.Count} risk(s).";
+            string surfaceText = surfaces.Count == 0
+                ? (_checkSelf ? "self only" : "no comparison meshes")
+                : $"{surfaces.Count} comparison mesh(es)" + (_checkSelf ? " + self" : "");
+            _scanSummary = $"Scanned 1 mesh vs {surfaceText} in {elapsed:0.0}s; found {_issues.Count} clipping warning(s).";
             if (log != null) {
                 log.AppendLine($"  elapsed={elapsed:0.000}s");
-                log.AppendLine($"  livePhysBones={settings.NativePhysBoneCount}");
-                log.AppendLine($"  generatedOrCustomPhysBones={settings.CustomPhysBoneCount}");
-                log.AppendLine($"  drivenVertexSamples={settings.DrivenVertexSampleCount}");
-                log.AppendLine($"  surfaceSamples={settings.SurfaceSampleCount}");
-                log.AppendLine($"  risks={_issues.Count}");
+                log.AppendLine($"  warnings={_issues.Count}");
                 AvatarQolLogger.Instance.Info(log.ToString());
             }
             SceneView.RepaintAll();
         }
 
         private List<SkinnedMeshRenderer> BuildSurfaceList() {
-            var list = new List<SkinnedMeshRenderer> { _targetRenderer };
+            var list = new List<SkinnedMeshRenderer>();
             foreach (var renderer in _comparisonRenderers) {
                 if (renderer == null || renderer.sharedMesh == null || !renderer.sharedMesh.isReadable) continue;
                 if (!list.Contains(renderer)) list.Add(renderer);
             }
             return list;
+        }
+
+        private PhysBoneClippingFixer.Settings BuildFixerSettings() {
+            return new PhysBoneClippingFixer.Settings {
+                CheckSelf = _checkSelf,
+                InsideTolerance = _insideTolerance,
+                SurfacePadding = _surfacePadding,
+                MaxFixPasses = _maxFixPasses,
+                MaxWarnings = _maxWarnings,
+            };
         }
     }
 }
