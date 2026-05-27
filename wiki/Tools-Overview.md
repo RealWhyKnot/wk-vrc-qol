@@ -72,6 +72,30 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 
 **Limits:** This is a conservative static estimate, not VRChat's full runtime PhysBone solver. Treat rows as "look here" hints for collider, radius, pull, and stiffness tuning.
 
+## Mesh Sculpt (early)
+
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Mesh Sculpt...*, or right-click a `SkinnedMeshRenderer` in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Mesh Sculpt...*.
+
+**What it does:** Makes a selected skinned mesh editable inside Unity, then lets you adjust it from the Scene view. The first pass supports vertex selection, moving selected vertices with a position handle, grab/smooth/inflate brushes, and filling a triangle or quad face between existing selected vertices.
+
+**FBX safety.** Before the first edit, the tool creates a generated mesh asset under `Assets/AvatarQol Generated/` when needed and assigns that clone to the renderer. Imported FBX/model sub-assets are not edited in place.
+
+**Scene view controls:**
+
+- **Select** -- click a mesh vertex to select it. Shift-click toggles without clearing the existing selection.
+- **Move** -- drag the Scene view position handle to move selected vertices.
+- **Grab** -- drag on the mesh to pull nearby vertices with brush falloff.
+- **Smooth** -- drag on the mesh to smooth nearby vertices toward their neighbors.
+- **Inflate** -- drag on the mesh to push nearby vertices along baked surface normals.
+
+**Face fill:** Select three or four existing vertices, choose a target submesh/material, then click *Fill Face*. This appends triangles only; it does not create new vertices, so existing UVs, bone weights, bindposes, and blendshape frame sizes remain intact. Use *Flip filled face winding* if the new face is inside-out.
+
+**Current limits:**
+
+- Fill Face supports triangles and quads only.
+- New vertices, arbitrary n-gons, bridge/extrude operations, and corrective blendshape storage are not part of this first pass.
+- Edits are written to the generated mesh clone assigned to the renderer.
+
 ## Auto Mesh Fixes
 
 **Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes -> Open...*, or right-click an avatar/mesh in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes...*.
