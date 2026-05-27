@@ -1,6 +1,6 @@
 // ClippingFixerWindow.cs
 //
-// Standalone UI for the mesh clipping scan and mesh fixer. It is
+// Standalone UI for the mesh clipping scan and weight fixer. It is
 // scoped to one SkinnedMeshRenderer at a time so the regular Weight Sanity
 // Check stays fast and this heavier scan is explicit.
 
@@ -26,7 +26,6 @@ namespace WhyKnot.AvatarQol.Tools {
         [SerializeField] private float _surfacePadding = 0.005f;
         [SerializeField] private float _physBoneWeightFloor = 0.03f;
         [SerializeField] private float _physBoneClearanceMargin = 0.025f;
-        [SerializeField] private int _maxFixPasses = 4;
         [SerializeField] private int _maxWarnings = 250;
         [SerializeField] private int _maxIssuesPerPhysBone = 8;
 
@@ -88,7 +87,7 @@ namespace WhyKnot.AvatarQol.Tools {
                         GUILayout.ExpandHeight(true))) {
                     _pageScroll = s.scrollPosition;
                     WkStyles.Notice(NoticeKind.Info,
-                        "Pick the mesh to fix, add the body or other meshes it should stay outside, then scan and apply a component or generated mesh fix.");
+                        "Pick the mesh to fix, add the body or other meshes it should stay outside, then scan and apply a component or generated weight fix.");
                     DrawSetup();
                     EditorGUILayout.Space(2);
                     DrawTuning();
@@ -106,7 +105,7 @@ namespace WhyKnot.AvatarQol.Tools {
             using (new EditorGUILayout.HorizontalScope()) {
                 EditorGUILayout.LabelField(
                     new GUIContent("Clipping Fixer",
-                        "Find mesh intersections and PhysBone motion risks between one mesh, itself, and nearby body/comparison meshes, then generate a build-time or destructive mesh fix."),
+                        "Find mesh intersections and PhysBone motion risks between one mesh, itself, and nearby body/comparison meshes, then generate a build-time or destructive weight fix."),
                     WkStyles.SectionTitle);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(

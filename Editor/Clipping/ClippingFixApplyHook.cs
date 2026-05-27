@@ -1,8 +1,9 @@
 // ClippingFixApplyHook.cs
 //
 // Runs WhyKnotClippingFixIntent components at play-mode entry and
-// avatar upload. The hook clones target meshes in memory and restores the
-// original renderer references after the lifecycle event finishes.
+// avatar upload. The hook clones target meshes in memory, rewrites skin
+// weights, and restores the original renderer references after the
+// lifecycle event finishes.
 
 using System.Collections.Generic;
 using System.Text;
@@ -131,6 +132,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                 string contextLabel) {
 
             var summary = new RunSummary { Context = contextLabel };
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
             foreach (var intent in intents) {
                 var renderer = intent.targetRenderer != null
                     ? intent.targetRenderer
@@ -150,12 +152,17 @@ namespace WhyKnot.AvatarQol.Clipping {
                     renderer,
                     intent.comparisonRenderers,
                     settings);
+                var cacheElapsed = System.Diagnostics.Stopwatch.StartNew();
                 if (!ClippingFixPrecomputeCache.TryLoad(intent, signature, out var initialIssues)) {
                     initialIssues = ClippingFixer.Scan(renderer, intent.comparisonRenderers, settings, log);
                     ClippingFixPrecomputeCache.Store(intent, signature, initialIssues);
-                    log?.AppendLine($"  precompute cache rebuilt: {initialIssues.Count} warning(s).");
+                    cacheElapsed.Stop();
+                    summary.CacheRebuilt++;
+                    log?.AppendLine($"  precompute cache rebuilt: {initialIssues.Count} warning(s) in {cacheElapsed.Elapsed.TotalSeconds:0.00}s.");
                 } else {
-                    log?.AppendLine($"  precompute cache reused: {initialIssues.Count} warning(s).");
+                    cacheElapsed.Stop();
+                    summary.CacheReused++;
+                    log?.AppendLine($"  precompute cache reused: {initialIssues.Count} warning(s) in {cacheElapsed.Elapsed.TotalSeconds:0.00}s.");
                 }
                 var result = ClippingFixer.ApplyNonDestructive(
                     renderer,
@@ -165,7 +172,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                     initialIssues);
                 summary.IntentsProcessed++;
                 summary.WarningsFound += result.IssuesFound;
-                summary.VerticesMoved += result.VerticesMoved;
+                summary.VerticesReweighted += result.VerticesReweighted;
                 summary.RenderersTouched += result.RenderersTouched;
                 if (result.ConfigurationError) summary.IntentsSkipped++;
 
@@ -174,6 +181,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                     AvatarQolLogger.Instance.Info(log.ToString());
                 }
             }
+            elapsed.Stop();
+            summary.ElapsedSeconds = elapsed.Elapsed.TotalSeconds;
             return summary;
         }
 
@@ -187,7 +196,6 @@ namespace WhyKnot.AvatarQol.Clipping {
                 SurfacePadding = intent.surfacePadding,
                 PhysBoneWeightFloor = intent.physBoneWeightFloor,
                 PhysBoneClearanceMargin = intent.physBoneClearanceMargin,
-                MaxFixPasses = intent.maxFixPasses,
                 MaxWarnings = 0,
                 MaxIssuesPerPhysBone = intent.maxIssuesPerPhysBone,
             };
@@ -220,11 +228,12 @@ namespace WhyKnot.AvatarQol.Clipping {
 
         private static void LogSummary(RunSummary s) {
             if (s.IntentsProcessed == 0 && s.IntentsSkipped == 0) return;
-            if (s.WarningsFound == 0 && s.VerticesMoved == 0) return;
+            if (s.WarningsFound == 0 && s.VerticesReweighted == 0) return;
             AvatarQolLogger.Instance.Info(
                 $"ClippingFix {s.Context}: processed {s.IntentsProcessed} intent(s) " +
                 $"(skipped {s.IntentsSkipped}), touched {s.RenderersTouched} renderer(s), " +
-                $"moved {s.VerticesMoved} vertices from {s.WarningsFound} warning(s).");
+                $"reweighted {s.VerticesReweighted} vertices from {s.WarningsFound} warning(s), " +
+                $"cache reused {s.CacheReused}, rebuilt {s.CacheRebuilt}, elapsed {s.ElapsedSeconds:0.00}s.");
         }
 
         private struct RunSummary {
@@ -233,7 +242,10 @@ namespace WhyKnot.AvatarQol.Clipping {
             public int IntentsSkipped;
             public int RenderersTouched;
             public int WarningsFound;
-            public int VerticesMoved;
+            public int VerticesReweighted;
+            public int CacheReused;
+            public int CacheRebuilt;
+            public double ElapsedSeconds;
         }
     }
 }

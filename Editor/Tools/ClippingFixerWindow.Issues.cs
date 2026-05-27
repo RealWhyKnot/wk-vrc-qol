@@ -33,7 +33,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     }
                     if (GUILayout.Button(
                             new GUIContent(selectedCount > 0 ? $"Apply selected ({selectedCount})" : "Apply destructive",
-                                "Clone the target mesh to a generated .asset now, rewire the renderer to that clone, and write the clipping fix into the clone. If warnings are selected, only those warnings are applied."),
+                                "Clone the target mesh to a generated .asset now, rewire the renderer to that clone, and write corrected skin weights into the clone. If warnings are selected, only those warnings are applied."),
                             GUILayout.Height(28), GUILayout.Width(140))) {
                         ApplyDestructiveFix();
                     }
@@ -274,7 +274,6 @@ namespace WhyKnot.AvatarQol.Tools {
             intent.surfacePadding = _surfacePadding;
             intent.physBoneWeightFloor = _physBoneWeightFloor;
             intent.physBoneClearanceMargin = _physBoneClearanceMargin;
-            intent.maxFixPasses = _maxFixPasses;
             intent.maxIssuesPerPhysBone = _maxIssuesPerPhysBone;
 
             var cacheSettings = ClippingFixApplyHook.SettingsFromIntent(intent);
@@ -284,14 +283,17 @@ namespace WhyKnot.AvatarQol.Tools {
                 _targetRenderer,
                 intent.comparisonRenderers,
                 cacheSettings);
+            var precomputeElapsed = System.Diagnostics.Stopwatch.StartNew();
             var precomputed = ClippingFixer.Scan(_targetRenderer, intent.comparisonRenderers, cacheSettings);
+            precomputeElapsed.Stop();
             ClippingFixPrecomputeCache.Store(intent, signature, precomputed);
             EditorUtility.SetDirty(intent);
             Undo.CollapseUndoOperations(undoGroup);
 
             AvatarQolLogger.Instance.Info(
                 $"clipping fix component saved on {_targetRenderer.name}: " +
-                $"{intent.comparisonRenderers.Count} comparison renderer(s), checkSelf={intent.checkSelf}, includePhysBoneMotion={intent.includePhysBoneMotion}, precomputed={precomputed.Count} warning(s).");
+                $"{intent.comparisonRenderers.Count} comparison renderer(s), checkSelf={intent.checkSelf}, includePhysBoneMotion={intent.includePhysBoneMotion}, " +
+                $"precomputed={precomputed.Count} warning(s) in {precomputeElapsed.Elapsed.TotalSeconds:0.00}s.");
         }
 
         private void ApplyDestructiveFix() {
@@ -306,7 +308,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             string msg =
                 $"Apply a destructive clipping fix to {_targetRenderer.name}?\n\n" +
-                $"Warnings clone the target mesh to {ClippingFixer.GeneratedFolder}/, rewire the renderer, and write vertex fixes into the clone. PhysBone motion warnings push weighted vertices away from risky nearby surfaces; PhysBone component settings are not changed.\n\n" +
+                $"Warnings clone the target mesh to {ClippingFixer.GeneratedFolder}/, rewire the renderer, and rewrite affected skin weights in the clone. Vertex positions and PhysBone component settings are not changed.\n\n" +
                 (selectedCount > 0
                     ? $"{selectedCount} selected warning(s) will be applied. Unselected warnings are left for a later pass.\n\n"
                     : "No warnings are selected, so every current warning will be applied.\n\n") +
@@ -324,7 +326,7 @@ namespace WhyKnot.AvatarQol.Tools {
             }
 
             AvatarQolLogger.Instance.Info(
-                $"mesh clipping destructive fix: {result.Summary} " +
+                $"mesh clipping weight fix: {result.Summary} " +
                 (result.ClonedPaths.Count > 0 ? $"Created {string.Join(", ", result.ClonedPaths)}." : ""));
             Scan();
         }

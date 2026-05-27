@@ -1,15 +1,16 @@
 // ClippingFixer.cs
 //
-// Shared scan and mesh-edit path for the Clipping Fixer window and the
-// build/play component. The scanner checks actual skinned mesh positions
-// against comparison mesh surfaces and can also include PhysBone motion
-// envelopes for weighted vertices.
+// Shared scan and skin-weight edit path for the Clipping Fixer window and
+// the build/play component. The scanner checks actual skinned mesh
+// positions against comparison mesh surfaces and can also include PhysBone
+// motion envelopes for weighted vertices.
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
 using WhyKnot.AvatarQol.Intent;
@@ -37,7 +38,6 @@ namespace WhyKnot.AvatarQol.Clipping {
             public float SurfacePadding = 0.005f;
             public float PhysBoneWeightFloor = 0.03f;
             public float PhysBoneClearanceMargin = 0.025f;
-            public int MaxFixPasses = 4;
             public int MaxWarnings = 250;
             public int MaxIssuesPerPhysBone = 8;
         }
@@ -75,14 +75,14 @@ namespace WhyKnot.AvatarQol.Clipping {
             public readonly List<string> Detail = new List<string>();
             public readonly List<string> ClonedPaths = new List<string>();
             public int IssuesFound;
-            public int VerticesMoved;
+            public int VerticesReweighted;
             public int FixPasses;
             public int MeshesCloned;
             public int RenderersTouched;
             public int UnreadableRenderers;
             public bool ConfigurationError;
 
-            public bool DidAnything => VerticesMoved > 0 || MeshesCloned > 0 || RenderersTouched > 0;
+            public bool DidAnything => VerticesReweighted > 0 || MeshesCloned > 0 || RenderersTouched > 0;
         }
 
         internal static List<Issue> Scan(
@@ -220,7 +220,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                 return result;
             }
 
-            var meshInitial = MeshEditIssues(initial);
+            var meshInitial = WeightEditIssues(initial);
             if (targetRenderer == null || targetRenderer.sharedMesh == null) {
                 result.ConfigurationError = true;
                 result.Summary = "Pick a target renderer with a readable mesh.";
@@ -243,18 +243,22 @@ namespace WhyKnot.AvatarQol.Clipping {
                     result.MeshesCloned = 1;
                     result.RenderersTouched = 1;
                     if (selectedIssues != null && selectedIssues.Count > 0) {
-                        int moved = ApplyIssuesToCurrentMesh(targetRenderer, meshInitial, useUndo: true);
-                        result.VerticesMoved = moved;
-                        result.FixPasses = moved > 0 ? 1 : 0;
+                        int reweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, meshInitial, useUndo: true);
+                        result.VerticesReweighted = reweighted;
+                        result.FixPasses = reweighted > 0 ? 1 : 0;
                     } else {
-                        RunFixPasses(targetRenderer, comparisonRenderers, settings, result, useUndo: true);
+                        ApplyInitialAndFollowupPasses(
+                            targetRenderer,
+                            meshInitial,
+                            result,
+                            useUndo: true);
                     }
                 }
-                if (result.VerticesMoved > 0 && clone != null) {
+                if (result.VerticesReweighted > 0 && clone != null) {
                     EditorUtility.SetDirty(clone);
                     EditorUtility.SetDirty(targetRenderer);
                 }
-                if (result.VerticesMoved > 0 || result.MeshesCloned > 0) {
+                if (result.VerticesReweighted > 0 || result.MeshesCloned > 0) {
                     AssetDatabase.SaveAssets();
                 }
                 Undo.CollapseUndoOperations(undoGroup);
@@ -286,8 +290,8 @@ namespace WhyKnot.AvatarQol.Clipping {
 
             result.IssuesFound = issues.Count(i => i != null);
             result.RenderersTouched = 1;
-            result.VerticesMoved = ApplyIssuesToCurrentMesh(targetRenderer, MeshEditIssues(issues), useUndo);
-            result.FixPasses = result.VerticesMoved > 0 ? 1 : 0;
+            result.VerticesReweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, WeightEditIssues(issues), useUndo);
+            result.FixPasses = result.VerticesReweighted > 0 ? 1 : 0;
             result.Summary = BuildSummary(result);
             return result;
         }
@@ -322,7 +326,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                 return result;
             }
 
-            var meshInitial = MeshEditIssues(initial);
+            var meshInitial = WeightEditIssues(initial);
             if (meshInitial.Count > 0) {
                 session.Capture(targetRenderer);
                 var clone = UnityEngine.Object.Instantiate(targetRenderer.sharedMesh);
@@ -333,16 +337,11 @@ namespace WhyKnot.AvatarQol.Clipping {
                 result.MeshesCloned = 1;
                 result.RenderersTouched = 1;
 
-                var meshSettings = UnlimitedWarnings(settings);
-                if (precomputedInitial != null) {
-                    int moved = ApplyIssuesToCurrentMesh(targetRenderer, meshInitial, useUndo: false);
-                    result.VerticesMoved += moved;
-                    if (moved > 0) result.FixPasses++;
-                    meshSettings.MaxFixPasses = Mathf.Max(0, meshSettings.MaxFixPasses - result.FixPasses);
-                }
-                if (meshSettings.MaxFixPasses > 0) {
-                    RunFixPasses(targetRenderer, comparisonRenderers, meshSettings, result, useUndo: false);
-                }
+                ApplyInitialAndFollowupPasses(
+                    targetRenderer,
+                    meshInitial,
+                    result,
+                    useUndo: false);
             }
             result.Summary = BuildSummary(result);
             return result;
@@ -362,75 +361,241 @@ namespace WhyKnot.AvatarQol.Clipping {
                 result.Summary = "No clipping warnings to fix.";
                 return result;
             }
-            var meshInitial = MeshEditIssues(initial);
+            var meshInitial = WeightEditIssues(initial);
             if (meshInitial.Count > 0) {
                 result.RenderersTouched = 1;
-                RunFixPasses(targetRenderer, comparisonRenderers, settings, result, useUndo);
+                ApplyInitialAndFollowupPasses(
+                    targetRenderer,
+                    meshInitial,
+                    result,
+                    useUndo);
             }
             result.Summary = BuildSummary(result);
             return result;
         }
 
-        private static void RunFixPasses(
+        private static void ApplyInitialAndFollowupPasses(
                 SkinnedMeshRenderer targetRenderer,
-                IList<SkinnedMeshRenderer> comparisonRenderers,
-                Settings settings,
+                IList<Issue> meshInitial,
                 Result result,
                 bool useUndo) {
 
-            int maxPasses = Mathf.Clamp(settings.MaxFixPasses, 1, 8);
-            for (int pass = 0; pass < maxPasses; pass++) {
-                var issues = Scan(targetRenderer, comparisonRenderers, settings);
-                if (issues.Count == 0) break;
-                int moved = ApplyIssuesToCurrentMesh(targetRenderer, issues, useUndo);
-                result.VerticesMoved += moved;
-                result.FixPasses++;
-                if (moved == 0) break;
-            }
+            if (meshInitial == null || meshInitial.Count == 0) return;
+
+            int reweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, meshInitial, useUndo);
+            result.VerticesReweighted += reweighted;
+            if (reweighted > 0) result.FixPasses++;
         }
 
-        private static int ApplyIssuesToCurrentMesh(
+        private static int ApplyIssueWeightsToCurrentMesh(
                 SkinnedMeshRenderer targetRenderer,
                 IList<Issue> issues,
                 bool useUndo) {
 
-            if (!TryBuildSnapshot(targetRenderer, out var snapshot, null, "target")) return 0;
+            if (targetRenderer == null || targetRenderer.sharedMesh == null) return 0;
             var mesh = targetRenderer.sharedMesh;
             if (mesh == null || !mesh.isReadable) return 0;
+            var targetBones = targetRenderer.bones ?? Array.Empty<Transform>();
+            if (targetBones.Length == 0) return 0;
 
-            var corrections = new Vector3[snapshot.VertexCount];
-            var hasCorrection = new bool[snapshot.VertexCount];
+            var bonesPerVertex = mesh.GetBonesPerVertex();
+            if (bonesPerVertex.Length != mesh.vertexCount) return 0;
+
+            var allWeights = mesh.GetAllBoneWeights();
+            var editable = new List<BoneWeight1>[mesh.vertexCount];
+            int cursor = 0;
+            for (int v = 0; v < editable.Length; v++) {
+                int count = bonesPerVertex[v];
+                var list = new List<BoneWeight1>(count);
+                for (int w = 0; w < count && cursor < allWeights.Length; w++) {
+                    var bw = allWeights[cursor++];
+                    if (bw.boneIndex >= 0 && bw.boneIndex < targetBones.Length && bw.weight > 0f) {
+                        list.Add(bw);
+                    }
+                }
+                editable[v] = NormalizeWeights(list);
+            }
+
+            var sourceCache = new Dictionary<SkinnedMeshRenderer, WeightSourceCache>();
+            var changed = new bool[mesh.vertexCount];
+            int reweighted = 0;
             foreach (var issue in issues) {
-                if (issue == null || issue.PushWorld.sqrMagnitude <= 0f) continue;
+                if (issue == null) continue;
+                if (!TryBuildReferenceWeights(issue, targetRenderer, targetBones, sourceCache, out var reference)) {
+                    continue;
+                }
                 var affected = issue.AffectedVertexIndices;
                 if (affected == null || affected.Length == 0) {
                     if (issue.VertexIndex >= 0) affected = new[] { issue.VertexIndex };
                     else continue;
                 }
                 foreach (int idx in affected) {
-                    if (idx < 0 || idx >= corrections.Length) continue;
-                    if (!hasCorrection[idx] || issue.PushWorld.sqrMagnitude > corrections[idx].sqrMagnitude) {
-                        corrections[idx] = issue.PushWorld;
-                        hasCorrection[idx] = true;
+                    if (idx < 0 || idx >= editable.Length) continue;
+                    if (AreSameWeights(editable[idx], reference)) continue;
+                    editable[idx] = CloneWeights(reference);
+                    if (!changed[idx]) {
+                        changed[idx] = true;
+                        reweighted++;
                     }
                 }
             }
 
-            var verts = mesh.vertices;
-            int moved = 0;
-            for (int i = 0; i < verts.Length && i < hasCorrection.Length; i++) {
-                if (!hasCorrection[i]) continue;
-                var nextWorld = snapshot.WorldVertices[i] + corrections[i];
-                verts[i] = snapshot.MeshLocalFromWorld(i, nextWorld);
-                moved++;
+            if (reweighted == 0) return 0;
+            WriteWeights(mesh, editable, useUndo);
+            return reweighted;
+        }
+
+        private static bool TryBuildReferenceWeights(
+                Issue issue,
+                SkinnedMeshRenderer targetRenderer,
+                Transform[] targetBones,
+                Dictionary<SkinnedMeshRenderer, WeightSourceCache> sourceCache,
+                out List<BoneWeight1> reference) {
+
+            reference = null;
+            if (issue == null || targetRenderer == null || targetBones == null) return false;
+            var sourceRenderer = issue.ComparisonRenderer != null ? issue.ComparisonRenderer : issue.Renderer;
+            if (sourceRenderer == null) sourceRenderer = targetRenderer;
+
+            if (!sourceCache.TryGetValue(sourceRenderer, out var source)) {
+                source = WeightSourceCache.Build(sourceRenderer, targetBones);
+                sourceCache[sourceRenderer] = source;
+            }
+            if (source == null || source.Surface == null || source.Surface.Triangles.Count == 0) return false;
+
+            Triangle tri;
+            if (issue.ComparisonTriangleIndex >= 0 && issue.ComparisonTriangleIndex < source.Surface.Triangles.Count) {
+                tri = source.Surface.Triangles[issue.ComparisonTriangleIndex];
+            } else if (source.Surface.TryFindClosest(issue.NearestSurfacePosition, out var closest)) {
+                tri = source.Surface.Triangles[closest.TriangleIndex];
+            } else {
+                return false;
             }
 
-            if (moved == 0) return 0;
-            if (useUndo) Undo.RegisterCompleteObjectUndo(mesh, "Fix mesh clipping");
-            mesh.vertices = verts;
-            mesh.RecalculateBounds();
+            var bary = Barycentric(issue.NearestSurfacePosition, tri);
+            var weights = new Dictionary<int, float>();
+            source.AddMappedVertexWeights(tri.AIndex, bary.x, weights);
+            source.AddMappedVertexWeights(tri.BIndex, bary.y, weights);
+            source.AddMappedVertexWeights(tri.CIndex, bary.z, weights);
+            reference = NormalizeWeights(weights);
+            return reference.Count > 0;
+        }
+
+        private static void WriteWeights(Mesh mesh, List<BoneWeight1>[] weightsByVertex, bool useUndo) {
+            int totalWeights = 0;
+            for (int v = 0; v < weightsByVertex.Length; v++) {
+                totalWeights += Mathf.Min(weightsByVertex[v] != null ? weightsByVertex[v].Count : 0, 255);
+            }
+
+            var bonesPerVertex = new NativeArray<byte>(weightsByVertex.Length, Allocator.Temp);
+            var weights = new NativeArray<BoneWeight1>(totalWeights, Allocator.Temp);
+            try {
+                int cursor = 0;
+                for (int v = 0; v < weightsByVertex.Length; v++) {
+                    var list = weightsByVertex[v] ?? new List<BoneWeight1>();
+                    int count = Mathf.Min(list.Count, 255);
+                    bonesPerVertex[v] = (byte)count;
+                    for (int i = 0; i < count; i++) {
+                        weights[cursor++] = list[i];
+                    }
+                }
+
+                if (useUndo) Undo.RegisterCompleteObjectUndo(mesh, "Fix clipping weights");
+                mesh.SetBoneWeights(bonesPerVertex, weights);
+            } finally {
+                weights.Dispose();
+                bonesPerVertex.Dispose();
+            }
             if (useUndo) EditorUtility.SetDirty(mesh);
-            return moved;
+        }
+
+        private static Vector3 Barycentric(Vector3 point, Triangle tri) {
+            var v0 = tri.B - tri.A;
+            var v1 = tri.C - tri.A;
+            var v2 = point - tri.A;
+            float d00 = Vector3.Dot(v0, v0);
+            float d01 = Vector3.Dot(v0, v1);
+            float d11 = Vector3.Dot(v1, v1);
+            float d20 = Vector3.Dot(v2, v0);
+            float d21 = Vector3.Dot(v2, v1);
+            float denom = d00 * d11 - d01 * d01;
+            if (Mathf.Abs(denom) < 0.0000001f) return new Vector3(1f / 3f, 1f / 3f, 1f / 3f);
+
+            float inv = 1f / denom;
+            float y = (d11 * d20 - d01 * d21) * inv;
+            float z = (d00 * d21 - d01 * d20) * inv;
+            float x = 1f - y - z;
+            x = Mathf.Max(0f, x);
+            y = Mathf.Max(0f, y);
+            z = Mathf.Max(0f, z);
+            float sum = x + y + z;
+            if (sum <= 0.000001f) return new Vector3(1f / 3f, 1f / 3f, 1f / 3f);
+            return new Vector3(x / sum, y / sum, z / sum);
+        }
+
+        private static List<BoneWeight1> NormalizeWeights(Dictionary<int, float> weights) {
+            var list = new List<BoneWeight1>();
+            if (weights == null) return list;
+            foreach (var kv in weights) {
+                if (kv.Key < 0 || kv.Value <= 0f) continue;
+                list.Add(new BoneWeight1 { boneIndex = kv.Key, weight = kv.Value });
+            }
+            return NormalizeWeights(list);
+        }
+
+        private static List<BoneWeight1> NormalizeWeights(List<BoneWeight1> weights) {
+            var list = weights != null ? new List<BoneWeight1>(weights.Count) : new List<BoneWeight1>();
+            if (weights != null) {
+                foreach (var bw in weights) {
+                    if (bw.boneIndex < 0 || bw.weight <= 0f) continue;
+                    int existing = list.FindIndex(i => i.boneIndex == bw.boneIndex);
+                    if (existing >= 0) {
+                        var current = list[existing];
+                        current.weight += bw.weight;
+                        list[existing] = current;
+                    } else {
+                        list.Add(bw);
+                    }
+                }
+            }
+
+            float total = 0f;
+            for (int i = 0; i < list.Count; i++) total += list[i].weight;
+            if (total <= 0.000001f) {
+                list.Clear();
+                return list;
+            }
+
+            float scale = 1f / total;
+            for (int i = 0; i < list.Count; i++) {
+                var bw = list[i];
+                bw.weight *= scale;
+                list[i] = bw;
+            }
+            list.Sort((a, b) => b.weight.CompareTo(a.weight));
+            return list;
+        }
+
+        private static List<BoneWeight1> CloneWeights(List<BoneWeight1> weights) {
+            return weights != null ? new List<BoneWeight1>(weights) : new List<BoneWeight1>();
+        }
+
+        private static bool AreSameWeights(List<BoneWeight1> a, List<BoneWeight1> b) {
+            if (a == null || b == null) return a == b;
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++) {
+                if (a[i].boneIndex != b[i].boneIndex) return false;
+                if (Mathf.Abs(a[i].weight - b[i].weight) > 0.0001f) return false;
+            }
+            return true;
+        }
+
+        private static int FindBoneIndex(Transform[] bones, Transform target) {
+            if (bones == null || target == null) return -1;
+            for (int i = 0; i < bones.Length; i++) {
+                if (bones[i] == target) return i;
+            }
+            return -1;
         }
 
         private static void ScanTargetInsideComparison(
@@ -565,10 +730,10 @@ namespace WhyKnot.AvatarQol.Clipping {
             }
         }
 
-        private static List<Issue> MeshEditIssues(IList<Issue> issues) {
+        private static List<Issue> WeightEditIssues(IList<Issue> issues) {
             if (issues == null) return new List<Issue>();
             return issues
-                .Where(i => i != null && i.PushWorld.sqrMagnitude > 0f)
+                .Where(i => i != null && (i.VertexIndex >= 0 || (i.AffectedVertexIndices != null && i.AffectedVertexIndices.Length > 0)))
                 .ToList();
         }
 
@@ -614,7 +779,6 @@ namespace WhyKnot.AvatarQol.Clipping {
                 SurfacePadding = source.SurfacePadding,
                 PhysBoneWeightFloor = source.PhysBoneWeightFloor,
                 PhysBoneClearanceMargin = source.PhysBoneClearanceMargin,
-                MaxFixPasses = source.MaxFixPasses,
                 MaxWarnings = 0,
                 MaxIssuesPerPhysBone = source.MaxIssuesPerPhysBone,
             };
@@ -662,7 +826,7 @@ namespace WhyKnot.AvatarQol.Clipping {
         private static string BuildSummary(Result result) {
             if (result == null) return "";
             var parts = new List<string>();
-            parts.Add($"{result.VerticesMoved} vertices moved");
+            parts.Add($"{result.VerticesReweighted} vertices reweighted");
             parts.Add($"{result.FixPasses} pass(es)");
             if (result.MeshesCloned > 0) parts.Add($"{result.MeshesCloned} mesh(es) cloned");
             if (result.UnreadableRenderers > 0) parts.Add($"{result.UnreadableRenderers} renderer(s) skipped (mesh not readable)");
@@ -759,7 +923,6 @@ namespace WhyKnot.AvatarQol.Clipping {
             public string RendererPath;
             public Vector3[] LocalVertices;
             public Vector3[] WorldVertices;
-            public int[] PrimaryBoneIndices;
             public Transform[] Bones;
             public Matrix4x4[] Bindposes;
 
@@ -777,21 +940,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                     Bindposes = mesh.bindposes ?? Array.Empty<Matrix4x4>(),
                 };
                 snapshot.WorldVertices = new Vector3[snapshot.LocalVertices.Length];
-                snapshot.PrimaryBoneIndices = new int[snapshot.LocalVertices.Length];
-                for (int i = 0; i < snapshot.PrimaryBoneIndices.Length; i++) snapshot.PrimaryBoneIndices[i] = -1;
                 snapshot.ComputeWorldVertices();
                 return snapshot;
-            }
-
-            public Vector3 MeshLocalFromWorld(int vertexIndex, Vector3 world) {
-                if (vertexIndex >= 0 && vertexIndex < PrimaryBoneIndices.Length) {
-                    int boneIndex = PrimaryBoneIndices[vertexIndex];
-                    if (boneIndex >= 0 && boneIndex < Bones.Length && boneIndex < Bindposes.Length && Bones[boneIndex] != null) {
-                        var boneLocal = Bones[boneIndex].InverseTransformPoint(world);
-                        return Bindposes[boneIndex].inverse.MultiplyPoint3x4(boneLocal);
-                    }
-                }
-                return Renderer.transform.InverseTransformPoint(world);
             }
 
             private void ComputeWorldVertices() {
@@ -816,8 +966,6 @@ namespace WhyKnot.AvatarQol.Clipping {
                     int count = bonesPerVertex[v];
                     Vector3 blended = Vector3.zero;
                     float sum = 0f;
-                    int primary = -1;
-                    float primaryWeight = 0f;
                     for (int w = 0; w < count; w++) {
                         var bw = weights[cursor + w];
                         int boneIndex = bw.boneIndex;
@@ -827,18 +975,68 @@ namespace WhyKnot.AvatarQol.Clipping {
                         var matrix = bone.localToWorldMatrix * bindposes[boneIndex];
                         blended += matrix.MultiplyPoint3x4(LocalVertices[v]) * bw.weight;
                         sum += bw.weight;
-                        if (bw.weight > primaryWeight) {
-                            primaryWeight = bw.weight;
-                            primary = boneIndex;
-                        }
                     }
                     cursor += count;
 
                     if (sum > 0.00001f) {
                         WorldVertices[v] = blended / sum;
-                        PrimaryBoneIndices[v] = primary;
                     } else {
                         WorldVertices[v] = Renderer.transform.TransformPoint(LocalVertices[v]);
+                    }
+                }
+            }
+        }
+
+        private sealed class WeightSourceCache {
+            public SurfaceMesh Surface;
+            public byte[] BonesPerVertex;
+            public BoneWeight1[] Weights;
+            public int[] WeightStarts;
+            public int[] SourceBoneToTargetBone;
+
+            public static WeightSourceCache Build(SkinnedMeshRenderer renderer, Transform[] targetBones) {
+                if (!TryBuildSnapshot(renderer, out var snapshot, null, "weight source")) return null;
+                var mesh = renderer.sharedMesh;
+                if (mesh == null || !mesh.isReadable) return null;
+
+                var sourceBones = renderer.bones ?? Array.Empty<Transform>();
+                var sourceToTarget = new int[sourceBones.Length];
+                for (int i = 0; i < sourceToTarget.Length; i++) {
+                    sourceToTarget[i] = FindBoneIndex(targetBones, sourceBones[i]);
+                }
+
+                var bonesPerVertex = mesh.GetBonesPerVertex().ToArray();
+                var weights = mesh.GetAllBoneWeights().ToArray();
+                var starts = new int[bonesPerVertex.Length];
+                int cursor = 0;
+                for (int v = 0; v < bonesPerVertex.Length; v++) {
+                    starts[v] = cursor;
+                    cursor += bonesPerVertex[v];
+                }
+
+                return new WeightSourceCache {
+                    Surface = SurfaceMesh.Build(snapshot),
+                    BonesPerVertex = bonesPerVertex,
+                    Weights = weights,
+                    WeightStarts = starts,
+                    SourceBoneToTargetBone = sourceToTarget,
+                };
+            }
+
+            public void AddMappedVertexWeights(int vertexIndex, float scale, Dictionary<int, float> output) {
+                if (output == null || scale <= 0f) return;
+                if (vertexIndex < 0 || vertexIndex >= BonesPerVertex.Length || vertexIndex >= WeightStarts.Length) return;
+                int start = WeightStarts[vertexIndex];
+                int count = BonesPerVertex[vertexIndex];
+                for (int i = 0; i < count && start + i < Weights.Length; i++) {
+                    var bw = Weights[start + i];
+                    if (bw.boneIndex < 0 || bw.boneIndex >= SourceBoneToTargetBone.Length || bw.weight <= 0f) continue;
+                    int targetBone = SourceBoneToTargetBone[bw.boneIndex];
+                    if (targetBone < 0) continue;
+                    if (output.TryGetValue(targetBone, out float current)) {
+                        output[targetBone] = current + bw.weight * scale;
+                    } else {
+                        output[targetBone] = bw.weight * scale;
                     }
                 }
             }

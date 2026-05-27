@@ -87,7 +87,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     () => _insideTolerance = EditorGUILayout.Slider(_insideTolerance, 0f, 0.02f));
                 WkStyles.LabeledField(
                     new GUIContent("Surface padding",
-                        "Extra space to leave outside the comparison surface after a fix. 0.005 m is 5 mm."),
+                        "Surface distance margin used when detecting triangle intersections. 0.005 m is 5 mm."),
                     () => _surfacePadding = EditorGUILayout.Slider(_surfacePadding, 0f, 0.05f));
                 using (new EditorGUI.DisabledScope(!_includePhysBoneMotion)) {
                     WkStyles.LabeledField(
@@ -103,10 +103,6 @@ namespace WhyKnot.AvatarQol.Tools {
                             "Caps how many motion warnings one PhysBone source can add to the list."),
                         () => _maxIssuesPerPhysBone = EditorGUILayout.IntSlider(_maxIssuesPerPhysBone, 1, 24));
                 }
-                WkStyles.LabeledField(
-                    new GUIContent("Fix passes",
-                        "How many scan/fix iterations to run when applying a component or destructive fix."),
-                    () => _maxFixPasses = EditorGUILayout.IntSlider(_maxFixPasses, 1, 8));
                 WkStyles.LabeledField(
                     new GUIContent("Max warning rows",
                         "Caps the visible warning list. Applying a fix still scans without this display cap."),

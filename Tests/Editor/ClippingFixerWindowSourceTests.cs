@@ -58,7 +58,7 @@ namespace WhyKnot.AvatarQol.Tests {
             StringAssert.Contains("IssueKind.PhysBoneMotion", core);
             StringAssert.Contains("PhysBoneClippingAnalyzer.ScanOneMesh", core);
             StringAssert.Contains("IncludePhysBoneMotion", core);
-            StringAssert.Contains("PushWorld", core);
+            StringAssert.Contains("ApplyIssueWeightsToCurrentMesh", core);
 
             foreach (var relativePath in PhysBoneSourcePaths) {
                 string text = ReadSource(packageRoot, relativePath);
@@ -73,7 +73,8 @@ namespace WhyKnot.AvatarQol.Tests {
             string hook = ReadSource(packageRoot, "Editor/Clipping/ClippingFixApplyHook.cs");
             string window = ReadSource(packageRoot, "Editor/Tools/ClippingFixerWindow.Issues.cs");
 
-            StringAssert.Contains("PushWorld", core);
+            StringAssert.Contains("SetBoneWeights", core);
+            Assert.IsFalse(core.Contains("mesh.vertices ="));
             Assert.IsFalse(core.Contains("PhysBoneSourcesAdjusted"));
             Assert.IsFalse(hook.Contains("PhysBoneSourcesAdjusted"));
             Assert.IsFalse(window.Contains("adjust the matching PhysBone source settings"));

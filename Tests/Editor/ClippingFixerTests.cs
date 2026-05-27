@@ -66,14 +66,19 @@ namespace WhyKnot.AvatarQol.Tests {
         }
 
         [Test]
-        public void ApplyToCurrentMeshInPlace_MovesClippingVertex() {
-            var body = CreateRenderer("Body", CreateCube("BodyMesh"));
+        public void ApplyToCurrentMeshInPlace_ReweightsClippingVertex() {
+            var avatar = new GameObject("Avatar");
+            _created.Add(avatar);
+            var movingBone = CreateChild("MovingBone", avatar.transform, Vector3.zero).transform;
+            var bodyBone = CreateChild("BodyBone", avatar.transform, Vector3.zero).transform;
+            var bones = new[] { movingBone, bodyBone };
+            var body = CreateWeightedRenderer("Body", CreateCube("BodyMesh"), bones, 1);
             var mesh = CreateTriangle("MovingMesh",
                 new Vector3(0f, 0f, 0f),
                 new Vector3(1.0f, 0f, 0f),
                 new Vector3(0f, 1.0f, 0f));
-            var target = CreateRenderer("Moving", mesh);
-            var before = mesh.vertices[0];
+            var target = CreateWeightedRenderer("Moving", mesh, bones, 0);
+            var before = mesh.vertices;
 
             var result = ClippingFixer.ApplyToCurrentMeshInPlace(
                 target,
@@ -81,18 +86,24 @@ namespace WhyKnot.AvatarQol.Tests {
                 Settings(checkSelf: false),
                 useUndo: false);
 
-            Assert.Greater(result.VerticesMoved, 0);
-            Assert.AreNotEqual(before, mesh.vertices[0]);
+            Assert.Greater(result.VerticesReweighted, 0);
+            CollectionAssert.AreEqual(before, mesh.vertices);
+            Assert.Greater(GetWeight(mesh, 0, 1), 0.99f);
         }
 
         [Test]
-        public void ApplySelectedToCurrentMeshInPlace_MovesOnlySelectedWarning() {
-            var body = CreateRenderer("Body", CreateCube("BodyMesh"));
+        public void ApplySelectedToCurrentMeshInPlace_ReweightsOnlySelectedWarning() {
+            var avatar = new GameObject("Avatar");
+            _created.Add(avatar);
+            var movingBone = CreateChild("MovingBone", avatar.transform, Vector3.zero).transform;
+            var bodyBone = CreateChild("BodyBone", avatar.transform, Vector3.zero).transform;
+            var bones = new[] { movingBone, bodyBone };
+            var body = CreateWeightedRenderer("Body", CreateCube("BodyMesh"), bones, 1);
             var mesh = CreateTriangle("MovingMesh",
                 new Vector3(0f, 0f, 0f),
                 new Vector3(0.1f, 0f, 0f),
                 new Vector3(1.0f, 1.0f, 0f));
-            var target = CreateRenderer("Moving", mesh);
+            var target = CreateWeightedRenderer("Moving", mesh, bones, 0);
             var before = mesh.vertices;
 
             var warnings = ClippingFixer.Scan(target, new[] { body }, Settings(checkSelf: false));
@@ -105,44 +116,61 @@ namespace WhyKnot.AvatarQol.Tests {
             var result = ClippingFixer.ApplySelectedToCurrentMeshInPlace(target, selected, useUndo: false);
 
             var after = mesh.vertices;
-            Assert.AreEqual(1, result.VerticesMoved);
-            Assert.AreNotEqual(before[0], after[0]);
-            Assert.AreEqual(before[1], after[1]);
+            Assert.AreEqual(1, result.VerticesReweighted);
+            CollectionAssert.AreEqual(before, after);
+            Assert.Greater(GetWeight(mesh, 0, 1), 0.99f);
+            Assert.Greater(GetWeight(mesh, 1, 0), 0.99f);
         }
 
         [Test]
-        public void ApplySelectedToCurrentMeshInPlace_MovesPhysBoneMotionWarningAsMeshFix() {
+        public void ApplySelectedToCurrentMeshInPlace_ReweightsPhysBoneMotionWarning() {
+            var avatar = new GameObject("Avatar");
+            _created.Add(avatar);
+            var movingBone = CreateChild("MovingBone", avatar.transform, Vector3.zero).transform;
+            var bodyBone = CreateChild("BodyBone", avatar.transform, Vector3.zero).transform;
+            var bones = new[] { movingBone, bodyBone };
+            var body = CreateWeightedRenderer("Body", CreateTriangle("BodyMesh",
+                new Vector3(0f, 0f, 0f),
+                new Vector3(0.1f, 0f, 0f),
+                new Vector3(1.0f, 1.0f, 0f)), bones, 1);
             var mesh = CreateTriangle("MovingMesh",
                 new Vector3(0f, 0f, 0f),
                 new Vector3(0.1f, 0f, 0f),
                 new Vector3(1.0f, 1.0f, 0f));
-            var target = CreateRenderer("Moving", mesh);
+            var target = CreateWeightedRenderer("Moving", mesh, bones, 0);
             var before = mesh.vertices;
             var selected = new[] {
                 new ClippingFixer.Issue {
                     Kind = ClippingFixer.IssueKind.PhysBoneMotion,
                     Renderer = target,
+                    ComparisonRenderer = body,
                     VertexIndex = 0,
+                    ComparisonTriangleIndex = 0,
                     AffectedVertexIndices = new[] { 0 },
-                    PushWorld = new Vector3(10f, 10f, 10f),
+                    NearestSurfacePosition = Vector3.zero,
                 },
             };
 
             var result = ClippingFixer.ApplySelectedToCurrentMeshInPlace(target, selected, useUndo: false);
 
-            Assert.AreEqual(1, result.VerticesMoved);
-            Assert.AreNotEqual(before[0], mesh.vertices[0]);
-            Assert.AreEqual(before[1], mesh.vertices[1]);
+            Assert.AreEqual(1, result.VerticesReweighted);
+            CollectionAssert.AreEqual(before, mesh.vertices);
+            Assert.Greater(GetWeight(mesh, 0, 1), 0.99f);
         }
 
         [Test]
         public void ApplyNonDestructive_UsesPrecomputedIssuesForFirstPass() {
-            var body = CreateRenderer("Body", CreateCube("BodyMesh"));
+            var avatar = new GameObject("Avatar");
+            _created.Add(avatar);
+            var movingBone = CreateChild("MovingBone", avatar.transform, Vector3.zero).transform;
+            var bodyBone = CreateChild("BodyBone", avatar.transform, Vector3.zero).transform;
+            var bones = new[] { movingBone, bodyBone };
+            var body = CreateWeightedRenderer("Body", CreateCube("BodyMesh"), bones, 1);
             var mesh = CreateTriangle("MovingMesh",
                 new Vector3(0f, 0f, 0f),
                 new Vector3(0.1f, 0f, 0f),
                 new Vector3(1.0f, 1.0f, 0f));
-            var target = CreateRenderer("Moving", mesh);
+            var target = CreateWeightedRenderer("Moving", mesh, bones, 0);
             var before = mesh.vertices;
             var warnings = ClippingFixer.Scan(target, new[] { body }, Settings(checkSelf: false));
             var selected = warnings
@@ -152,7 +180,6 @@ namespace WhyKnot.AvatarQol.Tests {
             Assert.AreEqual(1, selected.Count);
 
             var settings = Settings(checkSelf: false);
-            settings.MaxFixPasses = 1;
             using (var session = new AvatarIntentSession()) {
                 var result = ClippingFixer.ApplyNonDestructive(
                     target,
@@ -161,9 +188,10 @@ namespace WhyKnot.AvatarQol.Tests {
                     session,
                     selected);
 
-                Assert.AreEqual(1, result.VerticesMoved);
+                Assert.AreEqual(1, result.VerticesReweighted);
                 Assert.AreNotSame(mesh, target.sharedMesh);
-                Assert.AreNotEqual(before[0], target.sharedMesh.vertices[0]);
+                CollectionAssert.AreEqual(before, target.sharedMesh.vertices);
+                Assert.Greater(GetWeight(target.sharedMesh, 0, 1), 0.99f);
                 CollectionAssert.AreEqual(before, mesh.vertices);
             }
 
@@ -216,7 +244,7 @@ namespace WhyKnot.AvatarQol.Tests {
         }
 
         [Test]
-        public void ApplyToCurrentMeshInPlace_FixesPhysBoneMotionByMovingMeshOnly() {
+        public void ApplyToCurrentMeshInPlace_FixesPhysBoneMotionByReweightingOnly() {
             var avatar = new GameObject("Avatar");
             _created.Add(avatar);
             var animator = avatar.AddComponent<Animator>();
@@ -232,17 +260,19 @@ namespace WhyKnot.AvatarQol.Tests {
             physBone.maxStretch = 0.25f;
 
             var bodyBone = CreateChild("BodyBone", avatar.transform, Vector3.zero);
+            var bones = new[] { physBoneTransform.transform, bodyBone.transform };
             var targetMesh = CreateTriangle("MovingMesh",
                 new Vector3(0f, 0.05f, 0f),
                 new Vector3(0.02f, 0.05f, 0f),
                 new Vector3(0f, 0.07f, 0f));
-            var target = CreateWeightedRenderer("Moving", targetMesh, physBoneTransform.transform);
+            var target = CreateWeightedRenderer("Moving", targetMesh, bones, 0);
             var body = CreateWeightedRenderer("Body",
                 CreateTriangle("BodyMesh",
                     new Vector3(0f, 0.056f, 0f),
                     new Vector3(0.02f, 0.056f, 0f),
                     new Vector3(0f, 0.076f, 0f)),
-                bodyBone.transform);
+                bones,
+                1);
 
             var beforeVerts = targetMesh.vertices;
             float beforePull = physBone.pull;
@@ -254,10 +284,70 @@ namespace WhyKnot.AvatarQol.Tests {
 
             var result = ClippingFixer.ApplyToCurrentMeshInPlace(target, new[] { body }, settings, useUndo: false);
 
-            Assert.Greater(result.VerticesMoved, 0);
+            Assert.Greater(result.VerticesReweighted, 0);
             Assert.AreEqual(beforePull, physBone.pull);
             var afterVerts = targetMesh.vertices;
-            Assert.IsTrue(Enumerable.Range(0, beforeVerts.Length).Any(i => beforeVerts[i] != afterVerts[i]));
+            CollectionAssert.AreEqual(beforeVerts, afterVerts);
+            Assert.IsTrue(Enumerable.Range(0, targetMesh.vertexCount).Any(v =>
+                GetWeight(targetMesh, v, 1) > 0.99f &&
+                GetWeight(targetMesh, v, 0) < 0.01f));
+        }
+
+        [Test]
+        public void ApplyNonDestructive_DoesNotRepeatPhysBoneScanAfterPrecomputedPass() {
+            var avatar = new GameObject("Avatar");
+            _created.Add(avatar);
+            var animator = avatar.AddComponent<Animator>();
+
+            var physRoot = CreateChild("PhysRoot", avatar.transform, Vector3.zero);
+            var physBoneTransform = CreateChild("PhysBone", physRoot.transform, new Vector3(0f, 0.05f, 0f));
+            var physBone = physRoot.AddComponent<VRCPhysBone>();
+            physBone.rootTransform = physRoot.transform;
+            physBone.pull = 0f;
+            physBone.stiffness = 0f;
+            physBone.spring = 1f;
+            physBone.radius = 0.02f;
+            physBone.maxStretch = 0.25f;
+
+            var bodyBone = CreateChild("BodyBone", avatar.transform, Vector3.zero);
+            var bones = new[] { physBoneTransform.transform, bodyBone.transform };
+            var targetMesh = CreateTriangle("MovingMesh",
+                new Vector3(0f, 0.05f, 0f),
+                new Vector3(0.02f, 0.05f, 0f),
+                new Vector3(0f, 0.07f, 0f));
+            var target = CreateWeightedRenderer("Moving", targetMesh, bones, 0);
+            var body = CreateWeightedRenderer("Body",
+                CreateTriangle("BodyMesh",
+                    new Vector3(0f, 0.056f, 0f),
+                    new Vector3(0.02f, 0.056f, 0f),
+                    new Vector3(0f, 0.076f, 0f)),
+                bones,
+                1);
+
+            var settings = Settings(checkSelf: false);
+            settings.Animator = animator;
+            settings.IncludePhysBoneMotion = true;
+            settings.PhysBoneClearanceMargin = 0.01f;
+            settings.MaxIssuesPerPhysBone = 4;
+
+            var physWarnings = ClippingFixer.Scan(target, new[] { body }, settings)
+                .Where(i => i.Kind == ClippingFixer.IssueKind.PhysBoneMotion)
+                .ToList();
+            Assert.GreaterOrEqual(physWarnings.Count, 2);
+            int selectedVertex = physWarnings[0].VertexIndex;
+
+            using (var session = new AvatarIntentSession()) {
+                var result = ClippingFixer.ApplyNonDestructive(
+                    target,
+                    new[] { body },
+                    settings,
+                    session,
+                    physWarnings.Take(1).ToList());
+
+                Assert.AreEqual(1, result.VerticesReweighted);
+                CollectionAssert.AreEqual(targetMesh.vertices, target.sharedMesh.vertices);
+                Assert.Greater(GetWeight(target.sharedMesh, selectedVertex, 1), 0.99f);
+            }
         }
 #endif
 
@@ -267,7 +357,6 @@ namespace WhyKnot.AvatarQol.Tests {
                 IncludePhysBoneMotion = false,
                 InsideTolerance = 0.0001f,
                 SurfacePadding = 0.01f,
-                MaxFixPasses = 1,
                 MaxWarnings = 0,
             };
         }
@@ -282,19 +371,44 @@ namespace WhyKnot.AvatarQol.Tests {
         }
 
         private SkinnedMeshRenderer CreateWeightedRenderer(string name, Mesh mesh, Transform bone) {
+            return CreateWeightedRenderer(name, mesh, new[] { bone }, 0);
+        }
+
+        private SkinnedMeshRenderer CreateWeightedRenderer(string name, Mesh mesh, Transform[] bones, int weightedBoneIndex) {
             var renderer = CreateRenderer(name, mesh);
-            renderer.rootBone = bone;
-            renderer.bones = new[] { bone };
-            mesh.bindposes = new[] { bone.worldToLocalMatrix * renderer.transform.localToWorldMatrix };
+            renderer.rootBone = bones != null && bones.Length > 0 ? bones[0] : null;
+            renderer.bones = bones ?? new Transform[0];
+            mesh.bindposes = renderer.bones
+                .Select(bone => bone != null ? bone.worldToLocalMatrix * renderer.transform.localToWorldMatrix : Matrix4x4.identity)
+                .ToArray();
             var weights = new BoneWeight[mesh.vertexCount];
+            weightedBoneIndex = Mathf.Clamp(weightedBoneIndex, 0, Mathf.Max(0, renderer.bones.Length - 1));
             for (int i = 0; i < weights.Length; i++) {
                 weights[i] = new BoneWeight {
-                    boneIndex0 = 0,
+                    boneIndex0 = weightedBoneIndex,
                     weight0 = 1f,
                 };
             }
             mesh.boneWeights = weights;
             return renderer;
+        }
+
+        private static float GetWeight(Mesh mesh, int vertexIndex, int boneIndex) {
+            var bonesPerVertex = mesh.GetBonesPerVertex();
+            var weights = mesh.GetAllBoneWeights();
+            int cursor = 0;
+            for (int v = 0; v < bonesPerVertex.Length; v++) {
+                int count = bonesPerVertex[v];
+                if (v == vertexIndex) {
+                    for (int i = 0; i < count && cursor + i < weights.Length; i++) {
+                        var bw = weights[cursor + i];
+                        if (bw.boneIndex == boneIndex) return bw.weight;
+                    }
+                    return 0f;
+                }
+                cursor += count;
+            }
+            return 0f;
         }
 
         private GameObject CreateChild(string name, Transform parent, Vector3 localPosition) {
