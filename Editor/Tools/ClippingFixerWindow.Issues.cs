@@ -306,7 +306,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             string msg =
                 $"Apply a destructive clipping fix to {_targetRenderer.name}?\n\n" +
-                $"Mesh clipping warnings clone the target mesh to {ClippingFixer.GeneratedFolder}/, rewire the renderer, and write vertex fixes into the clone. PhysBone motion warnings adjust the matching PhysBone source settings with Undo support.\n\n" +
+                $"Warnings clone the target mesh to {ClippingFixer.GeneratedFolder}/, rewire the renderer, and write vertex fixes into the clone. PhysBone motion warnings push weighted vertices away from risky nearby surfaces; PhysBone component settings are not changed.\n\n" +
                 (selectedCount > 0
                     ? $"{selectedCount} selected warning(s) will be applied. Unselected warnings are left for a later pass.\n\n"
                     : "No warnings are selected, so every current warning will be applied.\n\n") +

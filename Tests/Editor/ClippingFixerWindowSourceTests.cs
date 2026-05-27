@@ -58,11 +58,26 @@ namespace WhyKnot.AvatarQol.Tests {
             StringAssert.Contains("IssueKind.PhysBoneMotion", core);
             StringAssert.Contains("PhysBoneClippingAnalyzer.ScanOneMesh", core);
             StringAssert.Contains("IncludePhysBoneMotion", core);
+            StringAssert.Contains("PushWorld", core);
 
             foreach (var relativePath in PhysBoneSourcePaths) {
                 string text = ReadSource(packageRoot, relativePath);
                 StringAssert.Contains("PhysBone", text, $"{relativePath} must keep the PhysBone motion warning path visible.");
             }
+        }
+
+        [Test]
+        public void PhysBoneMotionFixDoesNotEditPhysBoneSettings() {
+            var packageRoot = LocatePackageRoot();
+            string core = ReadSource(packageRoot, "Editor/Clipping/ClippingFixer.cs");
+            string hook = ReadSource(packageRoot, "Editor/Clipping/ClippingFixApplyHook.cs");
+            string window = ReadSource(packageRoot, "Editor/Tools/ClippingFixerWindow.Issues.cs");
+
+            StringAssert.Contains("PushWorld", core);
+            Assert.IsFalse(core.Contains("PhysBoneSourcesAdjusted"));
+            Assert.IsFalse(hook.Contains("PhysBoneSourcesAdjusted"));
+            Assert.IsFalse(window.Contains("adjust the matching PhysBone source settings"));
+            Assert.IsFalse(File.Exists(Path.Combine(packageRoot, "Editor", "Tools", "PhysBoneClippingAnalyzer.MotionReduction.cs")));
         }
 
         [Test]

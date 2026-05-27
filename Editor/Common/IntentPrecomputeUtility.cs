@@ -20,7 +20,7 @@ using WhyKnot.AvatarQol.WeightFixes;
 namespace WhyKnot.AvatarQol.Intent {
 
     internal static class IntentPrecomputeUtility {
-        public const int ClippingVersion = 1;
+        public const int ClippingVersion = 2;
         public const int WeightFixVersion = 1;
         public const int BoneMergerVersion = 1;
         public const int PhysBonePresetVersion = 1;

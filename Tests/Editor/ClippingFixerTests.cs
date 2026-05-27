@@ -111,7 +111,7 @@ namespace WhyKnot.AvatarQol.Tests {
         }
 
         [Test]
-        public void ApplySelectedToCurrentMeshInPlace_DoesNotMovePhysBoneMotionWarning() {
+        public void ApplySelectedToCurrentMeshInPlace_MovesPhysBoneMotionWarningAsMeshFix() {
             var mesh = CreateTriangle("MovingMesh",
                 new Vector3(0f, 0f, 0f),
                 new Vector3(0.1f, 0f, 0f),
@@ -130,8 +130,9 @@ namespace WhyKnot.AvatarQol.Tests {
 
             var result = ClippingFixer.ApplySelectedToCurrentMeshInPlace(target, selected, useUndo: false);
 
-            Assert.AreEqual(0, result.VerticesMoved);
-            CollectionAssert.AreEqual(before, mesh.vertices);
+            Assert.AreEqual(1, result.VerticesMoved);
+            Assert.AreNotEqual(before[0], mesh.vertices[0]);
+            Assert.AreEqual(before[1], mesh.vertices[1]);
         }
 
         [Test]
@@ -215,7 +216,7 @@ namespace WhyKnot.AvatarQol.Tests {
         }
 
         [Test]
-        public void ApplyToCurrentMeshInPlace_ReducesPhysBoneMotionWithoutMovingMesh() {
+        public void ApplyToCurrentMeshInPlace_FixesPhysBoneMotionByMovingMeshOnly() {
             var avatar = new GameObject("Avatar");
             _created.Add(avatar);
             var animator = avatar.AddComponent<Animator>();
@@ -253,10 +254,10 @@ namespace WhyKnot.AvatarQol.Tests {
 
             var result = ClippingFixer.ApplyToCurrentMeshInPlace(target, new[] { body }, settings, useUndo: false);
 
-            Assert.AreEqual(0, result.VerticesMoved);
-            Assert.Greater(result.PhysBoneSourcesAdjusted, 0);
-            Assert.Greater(physBone.pull, beforePull);
-            CollectionAssert.AreEqual(beforeVerts, targetMesh.vertices);
+            Assert.Greater(result.VerticesMoved, 0);
+            Assert.AreEqual(beforePull, physBone.pull);
+            var afterVerts = targetMesh.vertices;
+            Assert.IsTrue(Enumerable.Range(0, beforeVerts.Length).Any(i => beforeVerts[i] != afterVerts[i]));
         }
 #endif
 

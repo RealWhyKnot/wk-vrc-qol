@@ -78,12 +78,5 @@ namespace WhyKnot.AvatarQol.Tools {
 #endif
             }
         }
-
-        internal sealed class MotionReductionResult {
-            public int SourcesChanged;
-            public int IssuesCovered;
-            public int UnsupportedSources;
-            public string Summary;
-        }
     }
 }

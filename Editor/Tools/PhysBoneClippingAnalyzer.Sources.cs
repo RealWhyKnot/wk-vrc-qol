@@ -275,6 +275,29 @@ namespace WhyKnot.AvatarQol.Tools {
             };
         }
 
+        private static HashSet<Transform> BuildDrivenBoneSet(Transform root, HashSet<Transform> ignored) {
+            var driven = new HashSet<Transform>();
+            if (root == null) return driven;
+            ignored = ignored ?? new HashSet<Transform>();
+            foreach (var t in root.GetComponentsInChildren<Transform>(true)) {
+                if (t == null) continue;
+                if (IsIgnoredByPhysBone(t, root, ignored)) continue;
+                driven.Add(t);
+            }
+            return driven;
+        }
+
+        private static bool IsIgnoredByPhysBone(Transform t, Transform root, HashSet<Transform> ignored) {
+            if (ignored == null || ignored.Count == 0) return false;
+            var cur = t;
+            while (cur != null) {
+                if (ignored.Contains(cur)) return true;
+                if (cur == root) break;
+                cur = cur.parent;
+            }
+            return false;
+        }
+
 #endif
     }
 }

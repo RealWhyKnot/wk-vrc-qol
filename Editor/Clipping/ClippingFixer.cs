@@ -80,12 +80,9 @@ namespace WhyKnot.AvatarQol.Clipping {
             public int MeshesCloned;
             public int RenderersTouched;
             public int UnreadableRenderers;
-            public int PhysBoneWarningsHandled;
-            public int PhysBoneSourcesAdjusted;
-            public int UnsupportedPhysBoneSources;
             public bool ConfigurationError;
 
-            public bool DidAnything => VerticesMoved > 0 || MeshesCloned > 0 || RenderersTouched > 0 || PhysBoneSourcesAdjusted > 0;
+            public bool DidAnything => VerticesMoved > 0 || MeshesCloned > 0 || RenderersTouched > 0;
         }
 
         internal static List<Issue> Scan(
@@ -162,6 +159,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                 dir.Normalize();
 
                 float depth = Mathf.Max(0.0001f, motion.Score);
+                float padding = Mathf.Max(0.001f, settings.SurfacePadding);
+                var push = dir * (depth + padding);
                 var comparison = motion.NearestSurfaceRenderer != null
                     ? motion.NearestSurfaceRenderer
                     : targetRenderer;
@@ -181,7 +180,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                     WorldPosition = motion.WorldPosition,
                     NearestSurfacePosition = motion.NearestSurfacePosition,
                     SurfaceNormal = dir,
-                    PushWorld = Vector3.zero,
+                    PushWorld = push,
                     PenetrationDepth = depth,
                     Score = depth,
                     Reason = motion.Reason,
@@ -222,7 +221,6 @@ namespace WhyKnot.AvatarQol.Clipping {
             }
 
             var meshInitial = MeshEditIssues(initial);
-            var motionInitial = PhysBoneIssues(initial);
             if (targetRenderer == null || targetRenderer.sharedMesh == null) {
                 result.ConfigurationError = true;
                 result.Summary = "Pick a target renderer with a readable mesh.";
@@ -232,8 +230,6 @@ namespace WhyKnot.AvatarQol.Clipping {
             int undoGroup = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Avatar QoL: Fix mesh clipping");
             try {
-                ApplyPhysBoneMotionReduction(motionInitial, null, true, result, null);
-
                 Mesh clone = null;
                 if (meshInitial.Count > 0) {
                     clone = CloneMeshAssetAndAssign(targetRenderer, targetRenderer.sharedMesh, result);
@@ -251,14 +247,14 @@ namespace WhyKnot.AvatarQol.Clipping {
                         result.VerticesMoved = moved;
                         result.FixPasses = moved > 0 ? 1 : 0;
                     } else {
-                        RunFixPasses(targetRenderer, comparisonRenderers, WithoutPhysBoneMotion(settings), result, useUndo: true);
+                        RunFixPasses(targetRenderer, comparisonRenderers, settings, result, useUndo: true);
                     }
                 }
                 if (result.VerticesMoved > 0 && clone != null) {
                     EditorUtility.SetDirty(clone);
                     EditorUtility.SetDirty(targetRenderer);
                 }
-                if (result.VerticesMoved > 0 || result.PhysBoneSourcesAdjusted > 0) {
+                if (result.VerticesMoved > 0 || result.MeshesCloned > 0) {
                     AssetDatabase.SaveAssets();
                 }
                 Undo.CollapseUndoOperations(undoGroup);
@@ -326,9 +322,6 @@ namespace WhyKnot.AvatarQol.Clipping {
                 return result;
             }
 
-            var motionInitial = PhysBoneIssues(initial);
-            ApplyPhysBoneMotionReduction(motionInitial, session, false, result, null);
-
             var meshInitial = MeshEditIssues(initial);
             if (meshInitial.Count > 0) {
                 session.Capture(targetRenderer);
@@ -340,7 +333,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                 result.MeshesCloned = 1;
                 result.RenderersTouched = 1;
 
-                var meshSettings = WithoutPhysBoneMotion(settings);
+                var meshSettings = UnlimitedWarnings(settings);
                 if (precomputedInitial != null) {
                     int moved = ApplyIssuesToCurrentMesh(targetRenderer, meshInitial, useUndo: false);
                     result.VerticesMoved += moved;
@@ -369,11 +362,10 @@ namespace WhyKnot.AvatarQol.Clipping {
                 result.Summary = "No clipping warnings to fix.";
                 return result;
             }
-            ApplyPhysBoneMotionReduction(PhysBoneIssues(initial), null, useUndo, result, null);
             var meshInitial = MeshEditIssues(initial);
             if (meshInitial.Count > 0) {
                 result.RenderersTouched = 1;
-                RunFixPasses(targetRenderer, comparisonRenderers, WithoutPhysBoneMotion(settings), result, useUndo);
+                RunFixPasses(targetRenderer, comparisonRenderers, settings, result, useUndo);
             }
             result.Summary = BuildSummary(result);
             return result;
@@ -410,7 +402,6 @@ namespace WhyKnot.AvatarQol.Clipping {
             var hasCorrection = new bool[snapshot.VertexCount];
             foreach (var issue in issues) {
                 if (issue == null || issue.PushWorld.sqrMagnitude <= 0f) continue;
-                if (issue.Kind == IssueKind.PhysBoneMotion) continue;
                 var affected = issue.AffectedVertexIndices;
                 if (affected == null || affected.Length == 0) {
                     if (issue.VertexIndex >= 0) affected = new[] { issue.VertexIndex };
@@ -577,76 +568,8 @@ namespace WhyKnot.AvatarQol.Clipping {
         private static List<Issue> MeshEditIssues(IList<Issue> issues) {
             if (issues == null) return new List<Issue>();
             return issues
-                .Where(i => i != null && i.Kind != IssueKind.PhysBoneMotion)
+                .Where(i => i != null && i.PushWorld.sqrMagnitude > 0f)
                 .ToList();
-        }
-
-        private static List<Issue> PhysBoneIssues(IList<Issue> issues) {
-            if (issues == null) return new List<Issue>();
-            return issues
-                .Where(i => i != null && i.Kind == IssueKind.PhysBoneMotion)
-                .ToList();
-        }
-
-        private static Settings WithoutPhysBoneMotion(Settings source) {
-            var settings = UnlimitedWarnings(source);
-            settings.IncludePhysBoneMotion = false;
-            return settings;
-        }
-
-        private static void ApplyPhysBoneMotionReduction(
-                IList<Issue> motionIssues,
-                AvatarIntentSession session,
-                bool useUndo,
-                Result result,
-                StringBuilder log) {
-
-            if (motionIssues == null || motionIssues.Count == 0 || result == null) return;
-            var analyzerIssues = new List<PhysBoneClippingAnalyzer.Issue>();
-            var captured = new HashSet<Component>();
-            foreach (var issue in motionIssues) {
-                if (issue == null || issue.PhysBoneComponent == null) continue;
-                if (session != null && captured.Add(issue.PhysBoneComponent)) {
-                    session.Capture(issue.PhysBoneComponent);
-                }
-                analyzerIssues.Add(ToAnalyzerIssue(issue));
-            }
-
-            result.PhysBoneWarningsHandled += motionIssues.Count;
-            if (analyzerIssues.Count == 0) {
-                result.UnsupportedPhysBoneSources += motionIssues.Count;
-                return;
-            }
-
-            var reduced = PhysBoneClippingAnalyzer.ReduceMotionIssues(analyzerIssues, log, useUndo);
-            result.PhysBoneSourcesAdjusted += reduced.SourcesChanged;
-            result.UnsupportedPhysBoneSources += reduced.UnsupportedSources;
-            if (!string.IsNullOrEmpty(reduced.Summary)) result.Detail.Add(reduced.Summary);
-        }
-
-        private static PhysBoneClippingAnalyzer.Issue ToAnalyzerIssue(Issue issue) {
-            return new PhysBoneClippingAnalyzer.Issue {
-                Severity = issue.PhysBoneHighSeverity
-                    ? PhysBoneClippingAnalyzer.Severity.High
-                    : PhysBoneClippingAnalyzer.Severity.Medium,
-                PhysBoneComponent = issue.PhysBoneComponent,
-                PhysBoneSourceLabel = issue.PhysBoneSourceLabel,
-                PhysBoneRoot = issue.PhysBoneRoot,
-                DrivenBone = issue.DrivenBone,
-                Renderer = issue.Renderer,
-                RendererPath = issue.RendererPath,
-                VertexIndex = issue.VertexIndex,
-                WorldPosition = issue.WorldPosition,
-                NearestSurfacePosition = issue.NearestSurfacePosition,
-                NearestSurfaceRenderer = issue.ComparisonRenderer,
-                NearestSurfacePath = issue.ComparisonPath,
-                Weight = issue.PhysBoneWeight,
-                EstimatedMotion = issue.EstimatedMotion,
-                Clearance = issue.Clearance,
-                HasEffectiveColliders = issue.HasEffectiveColliders,
-                Reason = issue.Reason,
-                Score = issue.Score,
-            };
         }
 
         private static List<SkinnedMeshRenderer> BuildComparisonList(
@@ -742,8 +665,6 @@ namespace WhyKnot.AvatarQol.Clipping {
             parts.Add($"{result.VerticesMoved} vertices moved");
             parts.Add($"{result.FixPasses} pass(es)");
             if (result.MeshesCloned > 0) parts.Add($"{result.MeshesCloned} mesh(es) cloned");
-            if (result.PhysBoneSourcesAdjusted > 0) parts.Add($"{result.PhysBoneSourcesAdjusted} PhysBone source(s) adjusted");
-            if (result.UnsupportedPhysBoneSources > 0) parts.Add($"{result.UnsupportedPhysBoneSources} PhysBone source(s) skipped");
             if (result.UnreadableRenderers > 0) parts.Add($"{result.UnreadableRenderers} renderer(s) skipped (mesh not readable)");
             return string.Join(", ", parts) + ".";
         }
