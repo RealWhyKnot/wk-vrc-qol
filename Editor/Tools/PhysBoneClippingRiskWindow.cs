@@ -27,7 +27,8 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private readonly List<PhysBoneClippingAnalyzer.Issue> _issues =
             new List<PhysBoneClippingAnalyzer.Issue>();
-        private Vector2 _scroll;
+        private Vector2 _pageScroll;
+        private double _nextAnimatedRepaint;
         private string _scanSummary = "";
         private int _lastSurfaceRendererCount;
 
@@ -50,11 +51,14 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             SceneView.duringSceneGui += OnSceneGui;
             EditorApplication.update += OnEditorUpdate;
+            EditorApplication.update -= RepaintAnimatedChrome;
+            EditorApplication.update += RepaintAnimatedChrome;
         }
 
         private void OnDisable() {
             SceneView.duringSceneGui -= OnSceneGui;
             EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.update -= RepaintAnimatedChrome;
             StopPreview();
         }
 
@@ -62,18 +66,34 @@ namespace WhyKnot.AvatarQol.Tools {
             StopPreview();
         }
 
+        private void RepaintAnimatedChrome() {
+            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
+        }
+
         private void OnGUI() {
             using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
-            DrawTitleBar();
-            WkStyles.Notice(NoticeKind.Info,
-                "This is a heavier physics-risk scan, so it checks one mesh at a time. Pick the mesh that actually moves from PhysBones, then scan.");
-            DrawSetup();
-            EditorGUILayout.Space(2);
-            DrawTuning();
-            EditorGUILayout.Space(2);
-            DrawScanBar();
-            EditorGUILayout.Space(2);
-            DrawIssues();
+            using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
+                DrawTitleBar();
+                WkStyles.AnimatedAccentLine();
+
+                using (var s = new EditorGUILayout.ScrollViewScope(
+                        _pageScroll, false, false,
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.ExpandHeight(true))) {
+                    _pageScroll = s.scrollPosition;
+                    WkStyles.Notice(NoticeKind.Info,
+                        "This is a heavier physics-risk scan, so it checks one mesh at a time. Pick the mesh that actually moves from PhysBones, then scan.");
+                    DrawSetup();
+                    EditorGUILayout.Space(2);
+                    DrawTuning();
+                    EditorGUILayout.Space(2);
+                    DrawScanBar();
+                    EditorGUILayout.Space(2);
+                    DrawIssues();
+                }
+
+                WkStyles.WindowFooter();
+            }
         }
 
         private void DrawTitleBar() {

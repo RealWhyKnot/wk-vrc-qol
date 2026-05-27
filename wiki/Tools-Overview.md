@@ -66,7 +66,7 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 3. Estimates motion from actual PhysBone settings (`pull`, `spring`, `stiffness`, `gravity`, `radius`, `maxStretch`, collider presence, and reflected limits where available).
 4. Compares the target mesh's moving vertices against surface samples. The moving mesh is always included for self-clipping, and you can add as many readable comparison meshes as needed for body, clothing, accessory, or other proximity checks.
 
-**Per-risk UI:** **Create mesh fixes** creates or updates stored **Auto Tighten To Body** setups on the moving mesh object when rows have separate comparison mesh targets, then opens Auto Mesh Fixes for review. **Reduce motion** is the explicit fallback that edits supported PhysBone or authoring settings. *Frame* moves the Scene view camera to the risky vertex, *Reveal* selects the driven transform, and *Wobble* moves that transform until you click Stop.
+**Per-risk UI:** The current window is review-only. *Frame* moves the Scene view camera to the risky vertex, *Reveal* selects the driven transform, and *Wobble* moves that transform until you click Stop.
 
 **Performance rule:** start with one moving mesh and only the comparison meshes you care about. If the scan still takes too long, use a smaller mesh or raise **Driven weight floor** so fewer vertices become candidates.
 

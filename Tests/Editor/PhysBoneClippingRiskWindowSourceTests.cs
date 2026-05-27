@@ -14,25 +14,35 @@ namespace WhyKnot.AvatarQol.Tests {
 
     public sealed class PhysBoneClippingRiskWindowSourceTests {
 
-        private const string RelativePath = "Editor/Tools/PhysBoneClippingRiskWindow.cs";
+        private static readonly string[] RelativePaths = {
+            "Editor/Tools/PhysBoneClippingRiskWindow.cs",
+            "Editor/Tools/PhysBoneClippingRiskWindow.Issues.cs",
+        };
 
         [Test]
         public void NoReferencesToRemovedAutoMeshFixesTypes() {
             var packageRoot = LocatePackageRoot();
-            var fullPath = Path.Combine(packageRoot, RelativePath.Replace('/', Path.DirectorySeparatorChar));
-            Assert.IsTrue(File.Exists(fullPath), $"Expected to find {RelativePath} under {packageRoot}.");
-
-            string text = File.ReadAllText(fullPath);
             string[] banned = {
                 "AutoTightenToBody",
                 "WhyKnotMeshFixController",
                 "MeshFixWindow",
                 "MeshFixBaker",
                 "WhyKnot.AvatarQol.MeshFixes",
+                "Auto Mesh Fixes (removed)",
+                "ReduceMotion",
+                "CanReduceMotion",
+                "Reduce motion",
+                "new GUIContent(\"Motion\"",
             };
-            foreach (var token in banned) {
-                Assert.IsFalse(text.Contains(token),
-                    $"PhysBoneClippingRiskWindow.cs must not reference the removed Auto Mesh Fixes type '{token}'.");
+            foreach (var relativePath in RelativePaths) {
+                var fullPath = Path.Combine(packageRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                Assert.IsTrue(File.Exists(fullPath), $"Expected to find {relativePath} under {packageRoot}.");
+
+                string text = File.ReadAllText(fullPath);
+                foreach (var token in banned) {
+                    Assert.IsFalse(text.Contains(token),
+                        $"{relativePath} must not reference removed PhysBone Clipping Risks action '{token}'.");
+                }
             }
         }
 

@@ -49,6 +49,8 @@ namespace WhyKnot.AvatarQol.Tools {
         private Dictionary<string, List<ScoringSignal>> _suggestionExplanations = new Dictionary<string, List<ScoringSignal>>();
         private Vector2 _selectionScroll;
         private Vector2 _planScroll;
+        private Vector2 _pageScroll;
+        private double _nextAnimatedRepaint;
 
         // Post-apply tweak state. After Apply, we cache the just-created
         // components and a snapshot of their original parameters so the
@@ -82,6 +84,16 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             DiscoverPresets();
             if (_analysis == null) RebuildAnalysis();
+            EditorApplication.update -= RepaintAnimatedChrome;
+            EditorApplication.update += RepaintAnimatedChrome;
+        }
+
+        private void OnDisable() {
+            EditorApplication.update -= RepaintAnimatedChrome;
+        }
+
+        private void RepaintAnimatedChrome() {
+            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         private void DiscoverPresets() {
@@ -110,24 +122,36 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void OnGUI() {
             using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
-            DrawSdkBanner();
-            DrawTitleBar();
-            WkStyles.Notice(NoticeKind.Info,
-                "Flow: choose the bones, pick the suggested preset or another card, review the plan, then apply.");
-            DrawSelection();
-            EditorGUILayout.Space(2);
-            DrawAnalysisSummary();
-            EditorGUILayout.Space(2);
-            DrawPresetPicker();
-            EditorGUILayout.Space(2);
-            DrawPlanPreview();
-            EditorGUILayout.Space(2);
-            if (_tweakSnapshots != null && _tweakSnapshots.Count > 0) {
-                DrawTweakStrip();
-            } else {
-                DrawApplyBar();
+            using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
+                DrawTitleBar();
+                WkStyles.AnimatedAccentLine();
+
+                using (var s = new EditorGUILayout.ScrollViewScope(
+                        _pageScroll, false, false,
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.ExpandHeight(true))) {
+                    _pageScroll = s.scrollPosition;
+                    DrawSdkBanner();
+                    WkStyles.Notice(NoticeKind.Info,
+                        "Flow: choose the bones, pick the suggested preset or another card, review the plan, then apply.");
+                    DrawSelection();
+                    EditorGUILayout.Space(2);
+                    DrawAnalysisSummary();
+                    EditorGUILayout.Space(2);
+                    DrawPresetPicker();
+                    EditorGUILayout.Space(2);
+                    DrawPlanPreview();
+                    EditorGUILayout.Space(2);
+                    if (_tweakSnapshots != null && _tweakSnapshots.Count > 0) {
+                        DrawTweakStrip();
+                    } else {
+                        DrawApplyBar();
+                    }
+                    DrawAdvanced();
+                }
+
+                WkStyles.WindowFooter();
             }
-            DrawAdvanced();
         }
 
         private void DrawTitleBar() {

@@ -124,6 +124,8 @@ namespace WhyKnot.AvatarQol.Tools {
         private int _lastScanLeftRightVerts;
         private int _lastScanCenterVerts;
         private Vector2 _scroll;
+        private Vector2 _pageScroll;
+        private double _nextAnimatedRepaint;
 
         // Preview state - at most one bone is animated at a time. Bone is
         // wobbled around its rest rotation; on stop we restore.
@@ -153,11 +155,14 @@ namespace WhyKnot.AvatarQol.Tools {
         private void OnEnable() {
             SceneView.duringSceneGui += OnSceneGui;
             EditorApplication.update += OnEditorUpdate;
+            EditorApplication.update -= RepaintAnimatedChrome;
+            EditorApplication.update += RepaintAnimatedChrome;
         }
 
         private void OnDisable() {
             SceneView.duringSceneGui -= OnSceneGui;
             EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.update -= RepaintAnimatedChrome;
             StopPreview();
         }
 
@@ -165,23 +170,39 @@ namespace WhyKnot.AvatarQol.Tools {
             StopPreview();
         }
 
+        private void RepaintAnimatedChrome() {
+            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
+        }
+
         // ------ GUI --------------------------------------------------------
 
         private void OnGUI() {
             using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
-            // Top-of-window banner only when applicable; otherwise it lives
-            // inside Advanced. Hoisting it here keeps half-skipped scans visible.
-            if (_nonReadableRenderers.Count > 0) DrawNonReadableBanner();
-            DrawTitleBar();
-            WkStyles.Notice(NoticeKind.Info,
-                "Flow: pick the avatar Animator, scan, review weight rows, then fix or tune what matters. PhysBone clipping has its own window so this scan stays fast.");
-            DrawHeader();
-            EditorGUILayout.Space(2);
-            DrawScanBar();
-            EditorGUILayout.Space(2);
-            DrawIssues();
-            EditorGUILayout.Space(4);
-            DrawAdvanced();
+            using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
+                DrawTitleBar();
+                WkStyles.AnimatedAccentLine();
+
+                using (var s = new EditorGUILayout.ScrollViewScope(
+                        _pageScroll, false, false,
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.ExpandHeight(true))) {
+                    _pageScroll = s.scrollPosition;
+                    // Top-of-window banner only when applicable; otherwise it lives
+                    // inside Advanced. Hoisting it here keeps half-skipped scans visible.
+                    if (_nonReadableRenderers.Count > 0) DrawNonReadableBanner();
+                    WkStyles.Notice(NoticeKind.Info,
+                        "Flow: pick the avatar Animator, scan, review weight rows, then fix or tune what matters. PhysBone clipping has its own window so this scan stays fast.");
+                    DrawHeader();
+                    EditorGUILayout.Space(2);
+                    DrawScanBar();
+                    EditorGUILayout.Space(2);
+                    DrawIssues();
+                    EditorGUILayout.Space(4);
+                    DrawAdvanced();
+                }
+
+                WkStyles.WindowFooter();
+            }
         }
 
 

@@ -161,6 +161,8 @@ namespace WhyKnot.AvatarQol.Tools {
         private GUIStyle _hudLabelStyle;
         private GUIStyle _hudHeaderStyle;
         private GUIStyle _hudHintStyle;
+        private Vector2 _pageScroll;
+        private double _nextAnimatedRepaint;
 
         // ---- Entry points ----
 
@@ -183,6 +185,8 @@ namespace WhyKnot.AvatarQol.Tools {
             AssemblyReloadEvents.beforeAssemblyReload += BeforeAssemblyReload;
             EditorApplication.quitting += ReleaseGpuResources;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            EditorApplication.update -= RepaintAnimatedChrome;
+            EditorApplication.update += RepaintAnimatedChrome;
         }
 
         private void OnDisable() {
@@ -191,6 +195,7 @@ namespace WhyKnot.AvatarQol.Tools {
             AssemblyReloadEvents.beforeAssemblyReload -= BeforeAssemblyReload;
             EditorApplication.quitting -= ReleaseGpuResources;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            EditorApplication.update -= RepaintAnimatedChrome;
             SceneView.duringSceneGui -= OnSceneGui;
             RestoreToolsState();
         }
@@ -212,6 +217,10 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void OnPlayModeStateChanged(PlayModeStateChange state) {
             if (state == PlayModeStateChange.ExitingEditMode && _painting) StopPainting(prompt: false);
+        }
+
+        private void RepaintAnimatedChrome() {
+            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
         }
 
         private void ReleaseGpuResources() {

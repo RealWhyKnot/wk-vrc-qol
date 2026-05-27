@@ -52,6 +52,8 @@ namespace WhyKnot.AvatarQol.Tools {
         private string _resultSummary = "";
         private readonly List<string> _resultDetail = new List<string>();
         private Vector2 _scroll;
+        private Vector2 _pageScroll;
+        private double _nextAnimatedRepaint;
 
         // ------ Public entry points ----------------------------------------
 
@@ -74,22 +76,47 @@ namespace WhyKnot.AvatarQol.Tools {
             ClearResults();
         }
 
+        private void OnEnable() {
+            EditorApplication.update -= RepaintAnimatedChrome;
+            EditorApplication.update += RepaintAnimatedChrome;
+        }
+
+        private void OnDisable() {
+            EditorApplication.update -= RepaintAnimatedChrome;
+        }
+
+        private void RepaintAnimatedChrome() {
+            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
+        }
+
         // ------ GUI --------------------------------------------------------
 
         private void OnGUI() {
             using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
-            DrawTitleBar();
-            WkStyles.Notice(NoticeKind.Info,
-                "Folds a stray duplicate bone (e.g. Blender's Boob_L.001) into its kept counterpart. Apply mutates .mesh assets and (optionally) destroys the merged-away bone. Add as Intent stores the pair list on the avatar and applies the merge in memory at play / build instead. Preview clones the avatar and shows the merged result without committing.");
-            DrawAvatar();
-            EditorGUILayout.Space(2);
-            DrawPairs();
-            EditorGUILayout.Space(2);
-            DrawOptions();
-            EditorGUILayout.Space(2);
-            DrawApplyBar();
-            EditorGUILayout.Space(2);
-            DrawResults();
+            using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
+                DrawTitleBar();
+                WkStyles.AnimatedAccentLine();
+
+                using (var s = new EditorGUILayout.ScrollViewScope(
+                        _pageScroll, false, false,
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.ExpandHeight(true))) {
+                    _pageScroll = s.scrollPosition;
+                    WkStyles.Notice(NoticeKind.Info,
+                        "Folds a stray duplicate bone (e.g. Blender's Boob_L.001) into its kept counterpart. Apply mutates .mesh assets and (optionally) destroys the merged-away bone. Add as Intent stores the pair list on the avatar and applies the merge in memory at play / build instead. Preview clones the avatar and shows the merged result without committing.");
+                    DrawAvatar();
+                    EditorGUILayout.Space(2);
+                    DrawPairs();
+                    EditorGUILayout.Space(2);
+                    DrawOptions();
+                    EditorGUILayout.Space(2);
+                    DrawApplyBar();
+                    EditorGUILayout.Space(2);
+                    DrawResults();
+                }
+
+                WkStyles.WindowFooter();
+            }
         }
 
         private void DrawTitleBar() {

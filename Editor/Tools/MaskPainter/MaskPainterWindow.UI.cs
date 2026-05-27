@@ -15,22 +15,34 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void OnGUI() {
             using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
-            DrawStatusBanner();
-            EditorGUILayout.Space(2);
-            DrawTitleBar();
-            DrawHelpNotice();
-            DrawTargetSection();
-            EditorGUILayout.Space(4);
-            DrawStartStopBar();
-            DrawDriftNotice();
-            EditorGUILayout.Space(4);
-            DrawMaskSection();
-            EditorGUILayout.Space(2);
-            DrawBrushSection();
-            EditorGUILayout.Space(2);
-            DrawPreviewSection();
-            EditorGUILayout.Space(2);
-            DrawAdvancedSection();
+            using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
+                DrawStatusBanner();
+                EditorGUILayout.Space(2);
+                DrawTitleBar();
+                WkStyles.AnimatedAccentLine();
+
+                using (var s = new EditorGUILayout.ScrollViewScope(
+                        _pageScroll, false, false,
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.ExpandHeight(true))) {
+                    _pageScroll = s.scrollPosition;
+                    DrawHelpNotice();
+                    DrawTargetSection();
+                    EditorGUILayout.Space(4);
+                    DrawStartStopBar();
+                    DrawDriftNotice();
+                    EditorGUILayout.Space(4);
+                    DrawMaskSection();
+                    EditorGUILayout.Space(2);
+                    DrawBrushSection();
+                    EditorGUILayout.Space(2);
+                    DrawPreviewSection();
+                    EditorGUILayout.Space(2);
+                    DrawAdvancedSection();
+                }
+
+                WkStyles.WindowFooter();
+            }
         }
 
         private void DrawStatusBanner() {

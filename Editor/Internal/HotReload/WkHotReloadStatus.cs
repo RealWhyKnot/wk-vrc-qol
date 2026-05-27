@@ -3,15 +3,14 @@
 // EditorWindow exposing the live state of EditorHotReload: refresh
 // counter, last compile result, last 50 file events, log file path,
 // and an "Open in Explorer" jump. Built in IMGUI deliberately -- the
-// HotReload assembly has no reference to wk-core's main Editor
-// assembly (that isolation is the whole point of the separate
-// asmdef), so we can't reach for WkStyles primitives here. Keep this
-// view dependency-free.
+// hot-reload view stays dependency-light so it remains useful while
+// debugging editor startup and refresh issues.
 
 using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.Internal.Styling;
 
 namespace WhyKnot.AvatarQol.Internal.HotReload {
 
@@ -28,6 +27,7 @@ namespace WhyKnot.AvatarQol.Internal.HotReload {
         }
 
         private Vector2 _scroll;
+        private Vector2 _bodyScroll;
 
         private void OnEnable() {
             // Keep the view fresh while it's visible. Hot-reload events
@@ -49,14 +49,25 @@ namespace WhyKnot.AvatarQol.Internal.HotReload {
         }
 
         private void OnGUI() {
-            EditorGUILayout.LabelField("Hot Reload Status", EditorStyles.boldLabel);
-            EditorGUILayout.Space();
+            using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
+            using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
+                WkStyles.TitleBar("Hot Reload Status");
+                WkStyles.AnimatedAccentLine();
 
-            DrawSummary();
-            EditorGUILayout.Space();
-            DrawRecentEvents();
-            EditorGUILayout.Space();
-            DrawFooter();
+                using (var s = new EditorGUILayout.ScrollViewScope(
+                        _bodyScroll, false, false,
+                        GUILayout.ExpandWidth(true),
+                        GUILayout.ExpandHeight(true))) {
+                    _bodyScroll = s.scrollPosition;
+                    DrawSummary();
+                    EditorGUILayout.Space();
+                    DrawRecentEvents();
+                }
+
+                WkStyles.Divider();
+                DrawFooter();
+                WkStyles.BrandFooter();
+            }
         }
 
         private void DrawSummary() {
@@ -89,7 +100,9 @@ namespace WhyKnot.AvatarQol.Internal.HotReload {
             using (new EditorGUILayout.HorizontalScope()) {
                 var path = EditorHotReload.LogFilePath;
                 using (new EditorGUI.DisabledScope(string.IsNullOrEmpty(path))) {
-                    if (GUILayout.Button("Open Log in Explorer", GUILayout.Height(22))) {
+                    if (GUILayout.Button(
+                            new GUIContent("Open Log in Explorer", "Reveal the current hot-reload log file."),
+                            GUILayout.Height(22))) {
                         EditorUtility.RevealInFinder(path);
                     }
                 }

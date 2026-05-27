@@ -1,21 +1,14 @@
 // PhysBoneClippingRiskWindow.Issues.cs
 
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using UnityEditor;
 using UnityEngine;
 using WhyKnot.AvatarQol.Internal.Styling;
-using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 
     internal sealed partial class PhysBoneClippingRiskWindow {
 
         private void DrawScanBar() {
-            WkStyles.Notice(NoticeKind.Info,
-                "Auto Mesh Fixes was removed in this release. The analyzer still finds clipping risks and can still reduce PhysBone motion; the mesh-fix workflow is no longer offered.");
-
             using (new EditorGUILayout.HorizontalScope()) {
                 using (new EditorGUI.DisabledScope(!CanScan())) {
                     if (WkStyles.PrimaryButtonInline(
@@ -24,20 +17,6 @@ namespace WhyKnot.AvatarQol.Tools {
                             GUILayout.MinWidth(140))) {
                         Scan();
                     }
-                }
-                using (new EditorGUI.DisabledScope(!CanReduceMotionAny())) {
-                    if (GUILayout.Button(
-                            new GUIContent("Reduce motion",
-                                "Immediate fallback: tighten the PhysBone or supported authoring component settings on every supported risk row."),
-                            GUILayout.Height(28), GUILayout.Width(120))) {
-                        ReduceMotion(_issues);
-                    }
-                }
-                using (new EditorGUI.DisabledGroupScope(true)) {
-                    GUILayout.Button(
-                        new GUIContent("Auto Mesh Fixes (removed)",
-                            "Tombstone: the Auto Mesh Fixes mesh-fix workflow was removed in this release because the garment-tighten pipeline never produced a usable result. The button is left here disabled so the workflow is not silently re-added."),
-                        GUILayout.Height(28), GUILayout.Width(196));
                 }
                 using (new EditorGUI.DisabledScope(_previewBone == null)) {
                     if (GUILayout.Button(
@@ -75,7 +54,6 @@ namespace WhyKnot.AvatarQol.Tools {
             }
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
-                _scroll = EditorGUILayout.BeginScrollView(_scroll);
                 if (_issues.Count == 0) {
                     EditorGUILayout.LabelField(
                         _scanSummary == "" ? "Pick one moving mesh, add any comparison meshes, then scan." : "No likely PhysBone clipping risks found.",
@@ -86,7 +64,6 @@ namespace WhyKnot.AvatarQol.Tools {
                         WkStyles.Divider();
                     }
                 }
-                EditorGUILayout.EndScrollView();
             }
         }
 
@@ -118,14 +95,6 @@ namespace WhyKnot.AvatarQol.Tools {
                         WkStyles.MiniRowButton, GUILayout.Width(48))) {
                     Frame(issue.WorldPosition, 0.18f);
                 }
-                using (new EditorGUI.DisabledScope(!PhysBoneClippingAnalyzer.CanReduceMotion(issue))) {
-                    if (GUILayout.Button(
-                            new GUIContent("Motion",
-                                "Immediate fallback: tighten this PhysBone source's motion settings."),
-                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
-                        ReduceMotion(new[] { issue });
-                    }
-                }
                 using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
                     if (GUILayout.Button(new GUIContent("Reveal", "Select and ping the PhysBone-driven transform."),
                             WkStyles.MiniRowButton, GUILayout.Width(52))) {
@@ -145,33 +114,6 @@ namespace WhyKnot.AvatarQol.Tools {
             }
             EditorGUILayout.LabelField("   " + issue.Reason, WkStyles.Muted);
             EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", WkStyles.Muted);
-        }
-
-        private bool CanReduceMotionAny() {
-            return _issues.Any(PhysBoneClippingAnalyzer.CanReduceMotion);
-        }
-
-        private void ReduceMotion(IEnumerable<PhysBoneClippingAnalyzer.Issue> issues) {
-            var list = issues == null ? new List<PhysBoneClippingAnalyzer.Issue>() : issues.Where(i => i != null).ToList();
-            if (list.Count == 0) return;
-
-            var log = _verboseLog ? new StringBuilder() : null;
-            log?.AppendLine("PhysBone Clipping Risks motion reduction");
-            var result = PhysBoneClippingAnalyzer.ReduceMotionIssues(list, log);
-            _scanSummary = result.SourcesChanged > 0
-                ? $"{result.Summary} Scan again to verify."
-                : result.Summary;
-            if (result.UnsupportedSources > 0) {
-                _scanSummary += $" {result.UnsupportedSources} source(s) were not supported.";
-            }
-            if (log != null) {
-                log.AppendLine($"  sourcesChanged={result.SourcesChanged}");
-                log.AppendLine($"  issuesCovered={result.IssuesCovered}");
-                log.AppendLine($"  unsupportedSources={result.UnsupportedSources}");
-                AvatarQolLogger.Instance.Info(log.ToString());
-            }
-            SceneView.RepaintAll();
-            Repaint();
         }
 
         private void ClearResults() {
