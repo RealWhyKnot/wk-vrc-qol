@@ -137,7 +137,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         internal static void Open(bool prefillFromSelection) {
             var w = GetWindow<WeightSanityCheckWindow>(false, "Weight Sanity Check", true);
-            w.titleContent = new GUIContent("Avatar QoL — Weight Sanity Check");
+            w.titleContent = WkStyles.TitleContent("Avatar QoL - Weight Sanity Check");
             w.minSize = new Vector2(600, 460);
             if (prefillFromSelection) {
                 var sel = Selection.activeGameObject;

@@ -65,7 +65,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         internal static void Open(bool prefillFromSelection) {
             var w = GetWindow<PhysBonePresetWindow>(false, "PhysBone Preset", true);
-            w.titleContent = new GUIContent("Avatar QoL — PhysBone Preset");
+            w.titleContent = WkStyles.TitleContent("Avatar QoL - PhysBone Preset");
             w.minSize = new Vector2(640, 580);
             if (prefillFromSelection) {
                 w._selection = Selection.gameObjects

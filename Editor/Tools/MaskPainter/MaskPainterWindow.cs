@@ -168,7 +168,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         internal static void Open(SkinnedMeshRenderer prefillRenderer) {
             var w = GetWindow<MaskPainterWindow>(false, "Paint Mask", true);
-            w.titleContent = new GUIContent("Avatar QoL - Paint Mask");
+            w.titleContent = WkStyles.TitleContent("Avatar QoL - Paint Mask");
             w.minSize = new Vector2(440, 720);
             if (prefillRenderer != null) {
                 w._renderer = prefillRenderer;

@@ -59,7 +59,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         internal static void Open(bool prefillFromSelection) {
             var w = GetWindow<BoneMergerWindow>(false, "Bone Merger", true);
-            w.titleContent = new GUIContent("Avatar QoL -- Bone Merger");
+            w.titleContent = WkStyles.TitleContent("Avatar QoL - Bone Merger");
             w.minSize = new Vector2(560, 460);
             if (prefillFromSelection) w.PrefillFromSelection();
             w.Show();

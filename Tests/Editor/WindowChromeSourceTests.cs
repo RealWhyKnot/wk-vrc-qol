@@ -23,6 +23,18 @@ namespace WhyKnot.AvatarQol.Tests {
             "Editor/Tools/WeightSanityCheckWindow.cs",
         };
 
+        private static readonly string[] PublicWindowTitleSources = {
+            "Editor/Internal/WkToolWindow.cs",
+            "Editor/Internal/HotReload/WkHotReloadStatus.cs",
+            "Editor/Internal/Logging/WkLogViewerWindow.cs",
+            "Editor/Tools/BoneMergerWindow.cs",
+            "Editor/Tools/MaskPainter/MaskPainterWindow.cs",
+            "Editor/Tools/PhysBoneClippingRiskWindow.cs",
+            "Editor/Tools/PhysBonePreset/PhysBonePresetWindow.cs",
+            "Editor/Tools/UvTextureTransfer/UvTextureTransferWindow.cs",
+            "Editor/Tools/WeightSanityCheckWindow.cs",
+        };
+
         [Test]
         public void PublicWindowsRenderWhyKnotFooter() {
             var packageRoot = LocatePackageRoot();
@@ -45,6 +57,30 @@ namespace WhyKnot.AvatarQol.Tests {
                     || text.Contains(": WkToolWindow");
                 Assert.IsTrue(hasScroll, $"{relativePath} must protect overflowing content with a scroll view.");
             }
+        }
+
+        [Test]
+        public void PublicWindowsUseBrandedTitleContent() {
+            var packageRoot = LocatePackageRoot();
+            foreach (var relativePath in PublicWindowTitleSources) {
+                string text = ReadSource(packageRoot, relativePath);
+                bool hasLogoTitle = text.Contains("WkStyles.TitleContent")
+                    || text.Contains("BrandLogoTexture")
+                    || text.Contains(": WkToolWindow");
+                Assert.IsTrue(hasLogoTitle, $"{relativePath} must use the WhyKnot logo in its window title.");
+            }
+        }
+
+        [Test]
+        public void PackageIncludesWhyKnotLogoAsset() {
+            var packageRoot = LocatePackageRoot();
+            var logoPath = Path.Combine(packageRoot, "Editor", "Internal", "Assets", "WhyKnotLogo.png");
+            Assert.IsTrue(File.Exists(logoPath), "Expected the package to include the WhyKnot logo editor asset.");
+
+            string styles = ReadSource(packageRoot, "Editor/Internal/Styling/WkStyles.cs");
+            StringAssert.Contains("BrandLogoAssetName", styles);
+            StringAssert.Contains("TitleContent", styles);
+            StringAssert.Contains("BrandLogoMark", styles);
         }
 
         private static string ReadSource(string packageRoot, string relativePath) {

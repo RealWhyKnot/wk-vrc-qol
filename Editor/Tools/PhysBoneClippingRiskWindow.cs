@@ -41,7 +41,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         internal static void Open(bool prefillFromSelection) {
             var w = GetWindow<PhysBoneClippingRiskWindow>(false, "PhysBone Clipping Risks", true);
-            w.titleContent = new GUIContent("Avatar QoL - PhysBone Clipping Risks");
+            w.titleContent = WkStyles.TitleContent("Avatar QoL - PhysBone Clipping Risks");
             w.minSize = new Vector2(620, 460);
             if (prefillFromSelection) w.PrefillFromSelection();
             w.Show();

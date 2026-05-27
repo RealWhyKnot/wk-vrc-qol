@@ -82,7 +82,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
         internal static void Open(SkinnedMeshRenderer prefillTargetRenderer) {
             var w = GetWindow<UvTextureTransferWindow>(false, "UV Texture Transfer", true);
-            w.titleContent = new GUIContent("Avatar QoL - UV Texture Transfer");
+            w.titleContent = WkStyles.TitleContent("Avatar QoL - UV Texture Transfer");
             w.minSize = new Vector2(460, 640);
             if (prefillTargetRenderer != null) w._targetRenderer = prefillTargetRenderer;
             w.LoadPrefs();
