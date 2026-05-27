@@ -1,7 +1,7 @@
-// PhysBoneClippingRiskWindowSourceTests.cs
+// ClippingFixerWindowSourceTests.cs
 //
 // Cheap insurance against re-introducing the removed Auto Mesh Fixes
-// coupling. The current PhysBone clipping workflow owns its component and
+// coupling. The current mesh clipping workflow owns its component and
 // mesh write path directly; it should not reference the deleted mesh-fix
 // setup types or the old motion-reduction action.
 
@@ -10,11 +10,18 @@ using NUnit.Framework;
 
 namespace WhyKnot.AvatarQol.Tests {
 
-    public sealed class PhysBoneClippingRiskWindowSourceTests {
+    public sealed class ClippingFixerWindowSourceTests {
 
         private static readonly string[] RelativePaths = {
-            "Editor/Tools/PhysBoneClippingRiskWindow.cs",
-            "Editor/Tools/PhysBoneClippingRiskWindow.Issues.cs",
+            "Editor/Tools/ClippingFixerWindow.cs",
+            "Editor/Tools/ClippingFixerWindow.Issues.cs",
+        };
+
+        private static readonly string[] PhysBoneSourcePaths = {
+            "Editor/Clipping/ClippingFixer.cs",
+            "Editor/Clipping/ClippingFixApplyHook.cs",
+            "Editor/Tools/ClippingFixerWindow.Scan.cs",
+            "Runtime/Clipping/WhyKnotClippingFixIntent.cs",
         };
 
         [Test]
@@ -39,8 +46,22 @@ namespace WhyKnot.AvatarQol.Tests {
                 string text = File.ReadAllText(fullPath);
                 foreach (var token in banned) {
                     Assert.IsFalse(text.Contains(token),
-                        $"{relativePath} must not reference removed PhysBone clipping action '{token}'.");
+                        $"{relativePath} must not reference removed mesh clipping action '{token}'.");
                 }
+            }
+        }
+
+        [Test]
+        public void ClippingFixerKeepsPhysBoneMotionPathWired() {
+            var packageRoot = LocatePackageRoot();
+            string core = ReadSource(packageRoot, "Editor/Clipping/ClippingFixer.cs");
+            StringAssert.Contains("IssueKind.PhysBoneMotion", core);
+            StringAssert.Contains("PhysBoneClippingAnalyzer.ScanOneMesh", core);
+            StringAssert.Contains("IncludePhysBoneMotion", core);
+
+            foreach (var relativePath in PhysBoneSourcePaths) {
+                string text = ReadSource(packageRoot, relativePath);
+                StringAssert.Contains("PhysBone", text, $"{relativePath} must keep the PhysBone motion warning path visible.");
             }
         }
 
@@ -59,6 +80,12 @@ namespace WhyKnot.AvatarQol.Tests {
         private static string GetThisDirectory(
                 [System.Runtime.CompilerServices.CallerFilePath] string filePath = "") {
             return Path.GetDirectoryName(filePath);
+        }
+
+        private static string ReadSource(string packageRoot, string relativePath) {
+            var fullPath = Path.Combine(packageRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Assert.IsTrue(File.Exists(fullPath), $"Expected to find {relativePath} under {packageRoot}.");
+            return File.ReadAllText(fullPath);
         }
     }
 }

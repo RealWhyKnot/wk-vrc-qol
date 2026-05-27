@@ -1,6 +1,6 @@
-// PhysBoneClippingRiskTool.cs
+// ClippingFixerTool.cs
 //
-// Entry points for the standalone PhysBone clipping fix window. This scan is
+// Entry points for the standalone clipping fix window. This scan is
 // intentionally separate from Weight Sanity Check because it can be much more
 // expensive and most users only need it for one mesh at a time.
 
@@ -10,22 +10,22 @@ using UnityEngine;
 namespace WhyKnot.AvatarQol.Tools {
 
     [InitializeOnLoad]
-    internal static class PhysBoneClippingRiskTool {
+    internal static class ClippingFixerTool {
 
-        private const string ToolsMenuPath = "Tools/WhyKnot/wk-vrc-qol/PhysBone Clipping Fixer...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Fix PhysBone clipping...";
+        private const string ToolsMenuPath = "Tools/WhyKnot/wk-vrc-qol/Clipping Fixer...";
+        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Fix mesh clipping...";
 
-        static PhysBoneClippingRiskTool() { }
+        static ClippingFixerTool() { }
 
         [MenuItem(ToolsMenuPath, false, 2001)]
         private static void OpenFromToolsMenu() {
-            PhysBoneClippingRiskWindow.Open(prefillFromSelection: false);
+            ClippingFixerWindow.Open(prefillFromSelection: false);
         }
 
         [MenuItem(GameObjectMenuPath, false, 50)]
         private static void OpenFromHierarchy(MenuCommand command) {
             if (command.context != Selection.activeGameObject) return;
-            PhysBoneClippingRiskWindow.Open(prefillFromSelection: true);
+            ClippingFixerWindow.Open(prefillFromSelection: true);
         }
 
         [MenuItem(GameObjectMenuPath, true)]

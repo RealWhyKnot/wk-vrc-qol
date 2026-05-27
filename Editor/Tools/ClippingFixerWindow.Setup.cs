@@ -1,4 +1,4 @@
-// PhysBoneClippingRiskWindow.Setup.cs
+// ClippingFixerWindow.Setup.cs
 
 using System.Collections.Generic;
 using UnityEditor;
@@ -7,14 +7,14 @@ using WhyKnot.AvatarQol.Internal.Styling;
 
 namespace WhyKnot.AvatarQol.Tools {
 
-    internal sealed partial class PhysBoneClippingRiskWindow {
+    internal sealed partial class ClippingFixerWindow {
 
         private void DrawSetup() {
-            using (WkStyles.Section("1. Moving mesh",
-                    "Pick the mesh that moves from PhysBones. The scan checks that mesh against itself and against any comparison meshes you add below.")) {
+            using (WkStyles.Section("1. Mesh to fix",
+                    "Pick the mesh to scan. It can be PhysBone-driven, clothing, hair, or any mesh that should stay outside itself and the comparison meshes below.")) {
                 WkStyles.LabeledField(
                     new GUIContent("Animator",
-                        "Optional. Used only to prefill from selection and keep the setup anchored to the avatar."),
+                        "Avatar Animator used for PhysBone motion warnings and selection prefill."),
                     () => {
                         var next = (Animator)EditorGUILayout.ObjectField(_animator, typeof(Animator), true);
                         if (next != _animator) {
@@ -24,7 +24,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     });
                 WkStyles.LabeledField(
                     new GUIContent("Mesh to check",
-                        "The one SkinnedMeshRenderer to scan for PhysBone-driven vertices. Pick hair, tail, skirt, sleeves, or another mesh that moves from PhysBones."),
+                        "The SkinnedMeshRenderer to scan and fix. Pick hair, tail, skirt, sleeves, clothing, accessories, or another mesh that clips."),
                     () => {
                         var next = (SkinnedMeshRenderer)EditorGUILayout.ObjectField(_targetRenderer, typeof(SkinnedMeshRenderer), true);
                         if (next != _targetRenderer) {
@@ -39,16 +39,22 @@ namespace WhyKnot.AvatarQol.Tools {
                 if (_targetRenderer != null && (_targetRenderer.sharedMesh == null || !_targetRenderer.sharedMesh.isReadable)) {
                     WkStyles.Notice(NoticeKind.Warning,
                         "The target mesh is not readable. Enable Read/Write on its model importer before scanning.");
+                } else if (_includePhysBoneMotion && !PhysBoneClippingAnalyzer.SdkAvailable) {
+                    WkStyles.Notice(NoticeKind.Warning,
+                        "PhysBone motion warnings need VRChat SDK 3. Mesh intersection and self-clipping checks can still run.");
                 } else if (_animator != null && _targetRenderer != null && !_targetRenderer.transform.IsChildOf(_animator.transform)) {
                     WkStyles.Notice(NoticeKind.Warning,
                         "The target mesh is not under the selected Animator. The scan can still run, but PhysBone ownership may not match what you expect.");
+                } else if (_includePhysBoneMotion && _animator == null) {
+                    WkStyles.Notice(NoticeKind.Warning,
+                        "PhysBone motion warnings need an Animator. Mesh intersection and self-clipping checks can still run.");
                 }
             }
         }
 
         private void DrawTuning() {
             using (WkStyles.Section("2. Base / comparison meshes",
-                    "Add the body mesh first, then any clothing, accessories, or other readable SkinnedMeshRenderer that the moving mesh should not pass through.")) {
+                    "Add the body mesh first, then any clothing, accessories, or other readable SkinnedMeshRenderer that the target mesh should not pass through.")) {
                 EditorGUILayout.LabelField(
                     "Self-clipping is controlled below; comparison rows are for the body or other meshes the target should stay outside.",
                     WkStyles.Muted);
@@ -68,8 +74,12 @@ namespace WhyKnot.AvatarQol.Tools {
                     _showGizmos);
                 _checkSelf = EditorGUILayout.ToggleLeft(
                     new GUIContent("Check self-clipping",
-                        "Also scan the moving mesh for intersecting non-adjacent triangles."),
+                        "Also scan the target mesh for intersecting non-adjacent triangles."),
                     _checkSelf);
+                _includePhysBoneMotion = EditorGUILayout.ToggleLeft(
+                    new GUIContent("Check PhysBone motion",
+                        "Also warn when native VRC PhysBones or supported generated/custom PhysBone sources can move weighted vertices into nearby surfaces."),
+                    _includePhysBoneMotion);
 
                 WkStyles.LabeledField(
                     new GUIContent("Inside tolerance",
@@ -79,6 +89,20 @@ namespace WhyKnot.AvatarQol.Tools {
                     new GUIContent("Surface padding",
                         "Extra space to leave outside the comparison surface after a fix. 0.005 m is 5 mm."),
                     () => _surfacePadding = EditorGUILayout.Slider(_surfacePadding, 0f, 0.05f));
+                using (new EditorGUI.DisabledScope(!_includePhysBoneMotion)) {
+                    WkStyles.LabeledField(
+                        new GUIContent("PhysBone weight floor",
+                            "Minimum skin weight for a vertex to be considered driven by a PhysBone source."),
+                        () => _physBoneWeightFloor = EditorGUILayout.Slider(_physBoneWeightFloor, 0.005f, 0.20f));
+                    WkStyles.LabeledField(
+                        new GUIContent("PhysBone clearance",
+                            "Extra clearance a PhysBone-driven vertex should keep from nearby mesh surfaces before it is considered risky."),
+                        () => _physBoneClearanceMargin = EditorGUILayout.Slider(_physBoneClearanceMargin, 0.005f, 0.08f));
+                    WkStyles.LabeledField(
+                        new GUIContent("Warnings per PhysBone",
+                            "Caps how many motion warnings one PhysBone source can add to the list."),
+                        () => _maxIssuesPerPhysBone = EditorGUILayout.IntSlider(_maxIssuesPerPhysBone, 1, 24));
+                }
                 WkStyles.LabeledField(
                     new GUIContent("Fix passes",
                         "How many scan/fix iterations to run when applying a component or destructive fix."),
@@ -144,7 +168,7 @@ namespace WhyKnot.AvatarQol.Tools {
             if (_comparisonRenderers.Count == 0) {
                 EditorGUILayout.LabelField(
                     _checkSelf
-                        ? "No comparison meshes. The scan will check the moving mesh against itself."
+                        ? "No comparison meshes. The scan will check the target mesh against itself."
                         : "No comparison meshes. Add a body/comparison mesh or enable self-clipping.",
                     WkStyles.Muted);
             }

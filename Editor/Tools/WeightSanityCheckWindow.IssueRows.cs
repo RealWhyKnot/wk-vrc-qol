@@ -15,61 +15,6 @@ namespace WhyKnot.AvatarQol.Tools {
 
     internal sealed partial class WeightSanityCheckWindow {
 
-#if false
-        private void DrawPhysBoneIssueRow(PhysBoneClippingAnalyzer.Issue issue) {
-            var severityColor = issue.Severity == PhysBoneClippingAnalyzer.Severity.High
-                ? AvatarQolCategoryColors.Humanoid
-                : WkStyles.ColorWarning;
-            var severityText = issue.Severity == PhysBoneClippingAnalyzer.Severity.High ? "high" : "medium";
-            string boneName = issue.DrivenBone != null ? issue.DrivenBone.name : "(destroyed)";
-            using (new EditorGUILayout.HorizontalScope()) {
-                GUILayout.Space(6);
-                WkStyles.BadgePill(severityText, severityColor,
-                    issue.Severity == PhysBoneClippingAnalyzer.Severity.High
-                        ? "No effective collider coverage or already-small clearance. This deserves attention."
-                        : "Collider coverage exists or the estimated overlap is smaller, but the area is still worth checking.");
-                EditorGUILayout.LabelField(
-                    new GUIContent(
-                        $"{issue.RendererPath}  v#{issue.VertexIndex}  {boneName}  move~{issue.EstimatedMotion * 100f:0.0}cm  clearance {issue.Clearance * 100f:0.0}cm",
-                        issue.Reason),
-                    WkStyles.Mono);
-                GUILayout.FlexibleSpace();
-                using (new EditorGUI.DisabledScope(issue.Renderer == null)) {
-                    if (GUILayout.Button(new GUIContent("P", "Ping the renderer in the hierarchy."),
-                            WkStyles.MiniRowButton, GUILayout.Width(22))) {
-                        Selection.activeObject = issue.Renderer;
-                        EditorGUIUtility.PingObject(issue.Renderer);
-                    }
-                }
-                if (GUILayout.Button(new GUIContent("F", "Frame the risky vertex in the Scene view."),
-                        WkStyles.MiniRowButton, GUILayout.Width(22))) {
-                    var sv = SceneView.lastActiveSceneView;
-                    if (sv != null) {
-                        sv.LookAt(issue.WorldPosition, sv.rotation, 0.18f);
-                        sv.Repaint();
-                    }
-                }
-                using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
-                    if (GUILayout.Button(new GUIContent("R", "Reveal the PhysBone-driven transform."),
-                            WkStyles.MiniRowButton, GUILayout.Width(22))) {
-                        Selection.activeObject = issue.DrivenBone;
-                        EditorGUIUtility.PingObject(issue.DrivenBone);
-                        FlashHighlight(issue.WorldPosition);
-                    }
-                    bool isPreviewing = _previewBone == issue.DrivenBone && issue.DrivenBone != null;
-                    if (GUILayout.Button(new GUIContent(isPreviewing ? "Stop" : "Wobble",
-                            "Temporarily wobble the driven transform so you can inspect likely clipping. This does not move the Scene camera."),
-                            WkStyles.MiniRowButton, GUILayout.Width(58))) {
-                        if (isPreviewing) StopPreview();
-                        else StartPreview(issue.DrivenBone);
-                    }
-                }
-            }
-            EditorGUILayout.LabelField("   " + issue.Reason, WkStyles.Muted);
-            EditorGUILayout.LabelField($"   nearest surface: {issue.NearestSurfacePath}", WkStyles.Muted);
-        }
-
-#endif
         private void DrawIssueRowCompact(DetectedIssue i, int issueIndex) {
             string boneName = i.OffendingBone != null ? i.OffendingBone.name : "(destroyed)";
             Color tag; string tagText; string tagTooltip;

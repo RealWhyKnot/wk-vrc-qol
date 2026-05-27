@@ -1,9 +1,9 @@
-// PhysBoneClippingFixer.cs
+// ClippingFixer.cs
 //
-// Shared geometry scan and mesh-edit path for the PhysBone Clipping window
-// and the build/play component. The scanner checks actual skinned mesh
-// positions against comparison mesh surfaces, rather than estimating motion
-// from PhysBone settings.
+// Shared scan and mesh-edit path for the Clipping Fixer window and the
+// build/play component. The scanner checks actual skinned mesh positions
+// against comparison mesh surfaces and can also include PhysBone motion
+// envelopes for weighted vertices.
 
 using System;
 using System.Collections.Generic;
@@ -14,10 +14,11 @@ using UnityEditor;
 using UnityEngine;
 using WhyKnot.AvatarQol.Intent;
 using WhyKnot.AvatarQol.Internal.Utilities;
+using WhyKnot.AvatarQol.Tools;
 
-namespace WhyKnot.AvatarQol.PhysBoneClipping {
+namespace WhyKnot.AvatarQol.Clipping {
 
-    internal static class PhysBoneClippingFixer {
+    internal static class ClippingFixer {
 
         internal const string GeneratedFolder = "Assets/AvatarQol Generated";
 
@@ -25,14 +26,20 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             ComparisonMesh,
             SurfaceIntersection,
             SelfIntersection,
+            PhysBoneMotion,
         }
 
         internal sealed class Settings {
+            public Animator Animator;
             public bool CheckSelf = true;
+            public bool IncludePhysBoneMotion = true;
             public float InsideTolerance = 0.001f;
             public float SurfacePadding = 0.005f;
+            public float PhysBoneWeightFloor = 0.03f;
+            public float PhysBoneClearanceMargin = 0.025f;
             public int MaxFixPasses = 4;
             public int MaxWarnings = 250;
+            public int MaxIssuesPerPhysBone = 8;
         }
 
         internal sealed class Issue {
@@ -52,6 +59,14 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             public float PenetrationDepth;
             public float Score;
             public string Reason;
+            public Component PhysBoneComponent;
+            public string PhysBoneSourceLabel;
+            public Transform PhysBoneRoot;
+            public Transform DrivenBone;
+            public float PhysBoneWeight;
+            public float EstimatedMotion;
+            public float Clearance;
+            public bool HasEffectiveColliders;
         }
 
         internal sealed class Result {
@@ -93,6 +108,10 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
                 ScanSelfIntersections(targetSurface, settings, output);
             }
 
+            if (settings.IncludePhysBoneMotion) {
+                ScanPhysBoneMotion(targetRenderer, comparisons, settings, output, log);
+            }
+
             output.Sort((a, b) => b.Score.CompareTo(a.Score));
             if (settings.MaxWarnings > 0 && output.Count > settings.MaxWarnings) {
                 output = output.Take(settings.MaxWarnings).ToList();
@@ -104,10 +123,82 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             return output;
         }
 
+        private static void ScanPhysBoneMotion(
+                SkinnedMeshRenderer targetRenderer,
+                IList<SkinnedMeshRenderer> comparisonRenderers,
+                Settings settings,
+                List<Issue> output,
+                StringBuilder log) {
+
+            if (targetRenderer == null) return;
+            if (settings.Animator == null) {
+                log?.AppendLine("  PhysBone motion: skipped because no Animator was supplied.");
+                return;
+            }
+
+            var pbSettings = new PhysBoneClippingAnalyzer.Settings {
+                WeightFloor = Mathf.Max(0f, settings.PhysBoneWeightFloor),
+                ClearanceMargin = Mathf.Max(0.001f, settings.PhysBoneClearanceMargin),
+                MaxIssuesPerPhysBone = Mathf.Max(1, settings.MaxIssuesPerPhysBone),
+            };
+            var motionIssues = PhysBoneClippingAnalyzer.ScanOneMesh(
+                settings.Animator,
+                targetRenderer,
+                comparisonRenderers,
+                pbSettings,
+                log);
+
+            foreach (var motion in motionIssues) {
+                if (motion == null) continue;
+                var dir = motion.WorldPosition - motion.NearestSurfacePosition;
+                if (dir.sqrMagnitude < 0.0000001f && motion.DrivenBone != null && motion.PhysBoneRoot != null) {
+                    dir = motion.DrivenBone.position - motion.PhysBoneRoot.position;
+                }
+                if (dir.sqrMagnitude < 0.0000001f) dir = Vector3.up;
+                dir.Normalize();
+
+                float padding = Mathf.Max(0f, settings.SurfacePadding);
+                float depth = Mathf.Max(0.0001f, motion.Score);
+                var comparison = motion.NearestSurfaceRenderer != null
+                    ? motion.NearestSurfaceRenderer
+                    : targetRenderer;
+
+                output.Add(new Issue {
+                    Kind = IssueKind.PhysBoneMotion,
+                    Renderer = motion.Renderer,
+                    RendererPath = motion.RendererPath,
+                    ComparisonRenderer = comparison,
+                    ComparisonPath = !string.IsNullOrEmpty(motion.NearestSurfacePath)
+                        ? motion.NearestSurfacePath
+                        : (comparison != null ? PathUtility.GetGameObjectPath(comparison.gameObject) : ""),
+                    VertexIndex = motion.VertexIndex,
+                    AffectedVertexIndices = motion.VertexIndex >= 0
+                        ? new[] { motion.VertexIndex }
+                        : Array.Empty<int>(),
+                    WorldPosition = motion.WorldPosition,
+                    NearestSurfacePosition = motion.NearestSurfacePosition,
+                    SurfaceNormal = dir,
+                    PushWorld = dir * (depth + padding),
+                    PenetrationDepth = depth,
+                    Score = depth,
+                    Reason = motion.Reason,
+                    PhysBoneComponent = motion.PhysBoneComponent,
+                    PhysBoneSourceLabel = motion.PhysBoneSourceLabel,
+                    PhysBoneRoot = motion.PhysBoneRoot,
+                    DrivenBone = motion.DrivenBone,
+                    PhysBoneWeight = motion.Weight,
+                    EstimatedMotion = motion.EstimatedMotion,
+                    Clearance = motion.Clearance,
+                    HasEffectiveColliders = motion.HasEffectiveColliders,
+                });
+            }
+        }
+
         internal static Result ApplyDestructive(
                 SkinnedMeshRenderer targetRenderer,
                 IList<SkinnedMeshRenderer> comparisonRenderers,
-                Settings settings) {
+                Settings settings,
+                IList<Issue> selectedIssues = null) {
 
             var result = new Result();
             if (AvatarIntentSessionState.IsAnyIntentSessionActive()) {
@@ -117,7 +208,9 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             }
 
             settings = UnlimitedWarnings(settings);
-            var initial = Scan(targetRenderer, comparisonRenderers, settings);
+            var initial = selectedIssues != null && selectedIssues.Count > 0
+                ? selectedIssues.Where(i => i != null).ToList()
+                : Scan(targetRenderer, comparisonRenderers, settings);
             result.IssuesFound = initial.Count;
             if (initial.Count == 0) {
                 result.Summary = "No clipping warnings to fix.";
@@ -131,7 +224,7 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             }
 
             int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Avatar QoL: Fix PhysBone clipping");
+            Undo.SetCurrentGroupName("Avatar QoL: Fix mesh clipping");
             try {
                 var clone = CloneMeshAssetAndAssign(targetRenderer, targetRenderer.sharedMesh, result);
                 if (clone == null) {
@@ -143,7 +236,13 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
 
                 result.MeshesCloned = 1;
                 result.RenderersTouched = 1;
-                RunFixPasses(targetRenderer, comparisonRenderers, settings, result, useUndo: true);
+                if (selectedIssues != null && selectedIssues.Count > 0) {
+                    int moved = ApplyIssuesToCurrentMesh(targetRenderer, initial, useUndo: true);
+                    result.VerticesMoved = moved;
+                    result.FixPasses = moved > 0 ? 1 : 0;
+                } else {
+                    RunFixPasses(targetRenderer, comparisonRenderers, settings, result, useUndo: true);
+                }
                 if (result.VerticesMoved > 0) {
                     EditorUtility.SetDirty(clone);
                     EditorUtility.SetDirty(targetRenderer);
@@ -157,6 +256,30 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
                 result.ConfigurationError = true;
                 result.Summary = "Clipping fix failed. See the console for details.";
             }
+            return result;
+        }
+
+        internal static Result ApplySelectedToCurrentMeshInPlace(
+                SkinnedMeshRenderer targetRenderer,
+                IList<Issue> issues,
+                bool useUndo) {
+
+            var result = new Result();
+            if (targetRenderer == null || targetRenderer.sharedMesh == null) {
+                result.ConfigurationError = true;
+                result.Summary = "Pick a target renderer with a readable mesh.";
+                return result;
+            }
+            if (issues == null || issues.Count == 0) {
+                result.Summary = "No clipping warnings to fix.";
+                return result;
+            }
+
+            result.IssuesFound = issues.Count(i => i != null);
+            result.RenderersTouched = 1;
+            result.VerticesMoved = ApplyIssuesToCurrentMesh(targetRenderer, issues, useUndo);
+            result.FixPasses = result.VerticesMoved > 0 ? 1 : 0;
+            result.Summary = BuildSummary(result);
             return result;
         }
 
@@ -276,7 +399,7 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             }
 
             if (moved == 0) return 0;
-            if (useUndo) Undo.RegisterCompleteObjectUndo(mesh, "Fix PhysBone clipping");
+            if (useUndo) Undo.RegisterCompleteObjectUndo(mesh, "Fix mesh clipping");
             mesh.vertices = verts;
             mesh.RecalculateBounds();
             if (useUndo) EditorUtility.SetDirty(mesh);
@@ -450,11 +573,16 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
         private static Settings UnlimitedWarnings(Settings source) {
             source = source ?? new Settings();
             return new Settings {
+                Animator = source.Animator,
                 CheckSelf = source.CheckSelf,
+                IncludePhysBoneMotion = source.IncludePhysBoneMotion,
                 InsideTolerance = source.InsideTolerance,
                 SurfacePadding = source.SurfacePadding,
+                PhysBoneWeightFloor = source.PhysBoneWeightFloor,
+                PhysBoneClearanceMargin = source.PhysBoneClearanceMargin,
                 MaxFixPasses = source.MaxFixPasses,
                 MaxWarnings = 0,
+                MaxIssuesPerPhysBone = source.MaxIssuesPerPhysBone,
             };
         }
 

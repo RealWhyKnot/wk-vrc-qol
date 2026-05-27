@@ -1,7 +1,7 @@
 // PhysBoneClippingAnalyzer.cs
 //
-// Conservative PhysBone clipping risk estimate for the standalone
-// PhysBone Clipping Risks window.
+// Conservative PhysBone clipping risk estimate for the Clipping Fixer
+// PhysBone motion warning path.
 // This is not VRChat's runtime solver. It uses the actual PhysBone settings
 // that strongly affect motion (pull/spring/stiffness/gravity/radius/stretch
 // and collider presence) to estimate how far weighted vertices can plausibly

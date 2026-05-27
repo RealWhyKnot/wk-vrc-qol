@@ -183,7 +183,7 @@ namespace WhyKnot.AvatarQol.Tools {
                     // inside Advanced. Hoisting it here keeps half-skipped scans visible.
                     if (_nonReadableRenderers.Count > 0) DrawNonReadableBanner();
                     WkStyles.Notice(NoticeKind.Info,
-                        "Flow: pick the avatar Animator, scan, review weight rows, then fix or tune what matters. PhysBone clipping has its own window so this scan stays fast.");
+                        "Flow: pick the avatar Animator, scan, review weight rows, then fix or tune what matters. Mesh clipping has its own window so this scan stays fast.");
                     DrawHeader();
                     EditorGUILayout.Space(2);
                     DrawScanBar();

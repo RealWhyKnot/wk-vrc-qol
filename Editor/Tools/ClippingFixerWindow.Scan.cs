@@ -1,32 +1,34 @@
-// PhysBoneClippingRiskWindow.Scan.cs
+// ClippingFixerWindow.Scan.cs
 
 using System.Collections.Generic;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
-using WhyKnot.AvatarQol.PhysBoneClipping;
+using WhyKnot.AvatarQol.Clipping;
 using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.Tools {
 
-    internal sealed partial class PhysBoneClippingRiskWindow {
+    internal sealed partial class ClippingFixerWindow {
 
         private void Scan() {
             _issues.Clear();
+            _selectedIssueIndices.Clear();
             _scanSummary = "";
             if (!CanScan()) return;
 
             var surfaces = BuildSurfaceList();
             _lastSurfaceRendererCount = surfaces.Count;
             var log = _verboseLog ? new StringBuilder() : null;
-            log?.AppendLine("PhysBone Clipping Fixer verbose log");
+            log?.AppendLine("Clipping Fixer verbose log");
             log?.AppendLine($"  target={PathUtility.GetGameObjectPath(_targetRenderer.gameObject)}");
-            log?.AppendLine($"  comparisonRenderers={surfaces.Count}, checkSelf={_checkSelf}");
+            log?.AppendLine($"  comparisonRenderers={surfaces.Count}, checkSelf={_checkSelf}, includePhysBoneMotion={_includePhysBoneMotion}");
             log?.AppendLine($"  insideTolerance={_insideTolerance:F4}, surfacePadding={_surfacePadding:F3}, maxWarnings={_maxWarnings}");
+            log?.AppendLine($"  physBoneWeightFloor={_physBoneWeightFloor:F3}, physBoneClearance={_physBoneClearanceMargin:F3}, maxIssuesPerPhysBone={_maxIssuesPerPhysBone}");
 
             double start = EditorApplication.timeSinceStartup;
             var settings = BuildFixerSettings();
-            _issues.AddRange(PhysBoneClippingFixer.Scan(
+            _issues.AddRange(ClippingFixer.Scan(
                 _targetRenderer,
                 surfaces,
                 settings,
@@ -36,7 +38,14 @@ namespace WhyKnot.AvatarQol.Tools {
             string surfaceText = surfaces.Count == 0
                 ? (_checkSelf ? "self only" : "no comparison meshes")
                 : $"{surfaces.Count} comparison mesh(es)" + (_checkSelf ? " + self" : "");
-            _scanSummary = $"Scanned 1 mesh vs {surfaceText} in {elapsed:0.0}s; found {_issues.Count} clipping warning(s).";
+            int motionWarnings = 0;
+            foreach (var issue in _issues) {
+                if (issue != null && issue.Kind == ClippingFixer.IssueKind.PhysBoneMotion) motionWarnings++;
+            }
+            string motionText = _includePhysBoneMotion
+                ? $", including {motionWarnings} PhysBone warning(s)"
+                : "";
+            _scanSummary = $"Scanned 1 mesh vs {surfaceText} in {elapsed:0.0}s; found {_issues.Count} clipping warning(s){motionText}.";
             if (log != null) {
                 log.AppendLine($"  elapsed={elapsed:0.000}s");
                 log.AppendLine($"  warnings={_issues.Count}");
@@ -54,13 +63,18 @@ namespace WhyKnot.AvatarQol.Tools {
             return list;
         }
 
-        private PhysBoneClippingFixer.Settings BuildFixerSettings() {
-            return new PhysBoneClippingFixer.Settings {
+        private ClippingFixer.Settings BuildFixerSettings() {
+            return new ClippingFixer.Settings {
+                Animator = _animator,
                 CheckSelf = _checkSelf,
+                IncludePhysBoneMotion = _includePhysBoneMotion,
                 InsideTolerance = _insideTolerance,
                 SurfacePadding = _surfacePadding,
+                PhysBoneWeightFloor = _physBoneWeightFloor,
+                PhysBoneClearanceMargin = _physBoneClearanceMargin,
                 MaxFixPasses = _maxFixPasses,
                 MaxWarnings = _maxWarnings,
+                MaxIssuesPerPhysBone = _maxIssuesPerPhysBone,
             };
         }
     }

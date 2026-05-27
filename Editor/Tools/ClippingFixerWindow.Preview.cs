@@ -1,11 +1,11 @@
-// PhysBoneClippingRiskWindow.Preview.cs
+// ClippingFixerWindow.Preview.cs
 
 using UnityEditor;
 using UnityEngine;
 
 namespace WhyKnot.AvatarQol.Tools {
 
-    internal sealed partial class PhysBoneClippingRiskWindow {
+    internal sealed partial class ClippingFixerWindow {
 
         private void StartPreview(Transform bone) {
             if (bone == null) return;

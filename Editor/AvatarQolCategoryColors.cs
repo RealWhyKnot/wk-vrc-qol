@@ -1,11 +1,10 @@
 // AvatarQolCategoryColors.cs
 //
 // Domain-specific issue-category colors for the Weight Sanity Check and
-// PhysBone Clipping Risk windows. These three swatches form the pill
-// triplet (humanoid / spatial / center-band) that those tools paint next
-// to each finding to convey confidence. They stay in wk-vrc-qol --
-// not in the shared wk-core palette -- because they only carry meaning
-// inside those two tools' visual vocabulary.
+// Clipping Fixer windows. These swatches form the pill triplet
+// (humanoid / spatial / center-band) that those tools paint next to each
+// finding to convey confidence. They stay in wk-vrc-qol, not in the shared
+// wk-core palette, because they only carry meaning inside these tools.
 
 using UnityEngine;
 

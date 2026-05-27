@@ -1,6 +1,6 @@
-// PhysBoneClippingFixApplyHook.cs
+// ClippingFixApplyHook.cs
 //
-// Runs WhyKnotPhysBoneClippingFixIntent components at play-mode entry and
+// Runs WhyKnotClippingFixIntent components at play-mode entry and
 // avatar upload. The hook clones target meshes in memory and restores the
 // original renderer references after the lifecycle event finishes.
 
@@ -12,10 +12,10 @@ using VRC.SDKBase.Editor.BuildPipeline;
 using WhyKnot.AvatarQol.Components;
 using WhyKnot.AvatarQol.Intent;
 
-namespace WhyKnot.AvatarQol.PhysBoneClipping {
+namespace WhyKnot.AvatarQol.Clipping {
 
     [InitializeOnLoad]
-    internal sealed class PhysBoneClippingFixApplyHook :
+    internal sealed class ClippingFixApplyHook :
         IVRCSDKPreprocessAvatarCallback,
         IVRCSDKPostprocessAvatarCallback {
 
@@ -27,7 +27,7 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             new Dictionary<GameObject, AvatarIntentSession>();
         private static GameObject _activeUploadAvatar;
 
-        static PhysBoneClippingFixApplyHook() {
+        static ClippingFixApplyHook() {
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
         }
@@ -81,8 +81,8 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
         private static void ProcessForPlayMode() {
             DisposeAllSessions(_playModeSessions);
 
-            var byRoot = new Dictionary<GameObject, List<WhyKnotPhysBoneClippingFixIntent>>();
-            foreach (var intent in Resources.FindObjectsOfTypeAll<WhyKnotPhysBoneClippingFixIntent>()) {
+            var byRoot = new Dictionary<GameObject, List<WhyKnotClippingFixIntent>>();
+            foreach (var intent in Resources.FindObjectsOfTypeAll<WhyKnotClippingFixIntent>()) {
                 if (intent == null || !intent.enabled || !intent.processInPlayMode) continue;
                 if (EditorUtility.IsPersistent(intent)) continue;
                 var go = intent.gameObject;
@@ -91,7 +91,7 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
                 var animator = intent.GetComponentInParent<Animator>(true);
                 var root = animator != null ? animator.gameObject : TopLevel(intent.transform).gameObject;
                 if (!byRoot.TryGetValue(root, out var list)) {
-                    list = new List<WhyKnotPhysBoneClippingFixIntent>();
+                    list = new List<WhyKnotClippingFixIntent>();
                     byRoot[root] = list;
                 }
                 list.Add(intent);
@@ -114,10 +114,10 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             if (_playModeSessions.Count == 0) AvatarIntentSessionState.SetPlayModeActive(false);
         }
 
-        private static List<WhyKnotPhysBoneClippingFixIntent> CollectIntents(GameObject avatarRoot, bool requireUpload) {
-            var list = new List<WhyKnotPhysBoneClippingFixIntent>();
+        private static List<WhyKnotClippingFixIntent> CollectIntents(GameObject avatarRoot, bool requireUpload) {
+            var list = new List<WhyKnotClippingFixIntent>();
             if (avatarRoot == null) return list;
-            foreach (var intent in avatarRoot.GetComponentsInChildren<WhyKnotPhysBoneClippingFixIntent>(true)) {
+            foreach (var intent in avatarRoot.GetComponentsInChildren<WhyKnotClippingFixIntent>(true)) {
                 if (intent == null || !intent.enabled) continue;
                 if (requireUpload && !intent.processOnUpload) continue;
                 list.Add(intent);
@@ -126,7 +126,7 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
         }
 
         private static RunSummary RunIntents(
-                List<WhyKnotPhysBoneClippingFixIntent> intents,
+                List<WhyKnotClippingFixIntent> intents,
                 AvatarIntentSession session,
                 string contextLabel) {
 
@@ -141,10 +141,11 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
                 }
 
                 var settings = SettingsFromIntent(intent);
+                settings.Animator = ResolveAnimator(intent, renderer);
                 StringBuilder log = intent.verboseLog ? new StringBuilder() : null;
-                log?.AppendLine($"PhysBone clipping fix verbose ({contextLabel})");
-                log?.AppendLine($"  target={renderer.name}, comparisons={intent.comparisonRenderers?.Count ?? 0}");
-                var result = PhysBoneClippingFixer.ApplyNonDestructive(
+                log?.AppendLine($"clipping fix verbose ({contextLabel})");
+                log?.AppendLine($"  target={renderer.name}, comparisons={intent.comparisonRenderers?.Count ?? 0}, includePhysBoneMotion={settings.IncludePhysBoneMotion}");
+                var result = ClippingFixer.ApplyNonDestructive(
                     renderer,
                     intent.comparisonRenderers,
                     settings,
@@ -163,15 +164,29 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             return summary;
         }
 
-        internal static PhysBoneClippingFixer.Settings SettingsFromIntent(WhyKnotPhysBoneClippingFixIntent intent) {
-            if (intent == null) return new PhysBoneClippingFixer.Settings();
-            return new PhysBoneClippingFixer.Settings {
+        internal static ClippingFixer.Settings SettingsFromIntent(WhyKnotClippingFixIntent intent) {
+            if (intent == null) return new ClippingFixer.Settings();
+            return new ClippingFixer.Settings {
+                Animator = intent.animator,
                 CheckSelf = intent.checkSelf,
+                IncludePhysBoneMotion = intent.includePhysBoneMotion,
                 InsideTolerance = intent.insideTolerance,
                 SurfacePadding = intent.surfacePadding,
+                PhysBoneWeightFloor = intent.physBoneWeightFloor,
+                PhysBoneClearanceMargin = intent.physBoneClearanceMargin,
                 MaxFixPasses = intent.maxFixPasses,
                 MaxWarnings = 0,
+                MaxIssuesPerPhysBone = intent.maxIssuesPerPhysBone,
             };
+        }
+
+        private static Animator ResolveAnimator(WhyKnotClippingFixIntent intent, SkinnedMeshRenderer renderer) {
+            if (intent != null && intent.animator != null) return intent.animator;
+            if (renderer != null) {
+                var animator = renderer.GetComponentInParent<Animator>(true);
+                if (animator != null) return animator;
+            }
+            return intent != null ? intent.GetComponentInParent<Animator>(true) : null;
         }
 
         private static Transform TopLevel(Transform transform) {
@@ -194,7 +209,7 @@ namespace WhyKnot.AvatarQol.PhysBoneClipping {
             if (s.IntentsProcessed == 0 && s.IntentsSkipped == 0) return;
             if (s.WarningsFound == 0 && s.VerticesMoved == 0) return;
             AvatarQolLogger.Instance.Info(
-                $"PhysBoneClippingFix {s.Context}: processed {s.IntentsProcessed} intent(s) " +
+                $"ClippingFix {s.Context}: processed {s.IntentsProcessed} intent(s) " +
                 $"(skipped {s.IntentsSkipped}), touched {s.RenderersTouched} renderer(s), " +
                 $"moved {s.VerticesMoved} vertices from {s.WarningsFound} warning(s).");
         }
