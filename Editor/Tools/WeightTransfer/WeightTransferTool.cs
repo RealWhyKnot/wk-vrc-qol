@@ -1,26 +1,24 @@
 // WeightTransferTool.cs
 //
-// Menu registration for the weight transfer window.
+// Retired public menu entries for the weight transfer window. The window
+// and transfer backend stay in source.
 
 using UnityEditor;
 using UnityEngine;
 
 namespace WhyKnot.AvatarQol.Tools {
 
-    [InitializeOnLoad]
     internal static class WeightTransferTool {
 
-        private const string ToolsMenuPath = "Tools/WhyKnot/wk-vrc-qol/Weight Transfer...";
-        private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Weight Transfer (target this)...";
+        // private const string ToolsMenuPath = "Tools/WhyKnot/wk-vrc-qol/Weight Transfer...";
+        // private const string GameObjectMenuPath = "GameObject/WhyKnot/wk-vrc-qol/Weight Transfer (target this)...";
 
-        static WeightTransferTool() { }
-
-        [MenuItem(ToolsMenuPath, false, 2006)]
+        // [MenuItem(ToolsMenuPath, false, 2006)]
         private static void OpenFromToolsMenu() {
             WeightTransferWindow.Open(null);
         }
 
-        [MenuItem(GameObjectMenuPath, false, 54)]
+        // [MenuItem(GameObjectMenuPath, false, 54)]
         private static void OpenFromHierarchy(MenuCommand command) {
             if (command.context != Selection.activeGameObject) return;
             var go = command.context as GameObject;
@@ -28,7 +26,7 @@ namespace WhyKnot.AvatarQol.Tools {
             WeightTransferWindow.Open(renderer);
         }
 
-        [MenuItem(GameObjectMenuPath, true)]
+        // [MenuItem(GameObjectMenuPath, true)]
         private static bool OpenFromHierarchyValidate(MenuCommand command) {
             if (command.context != Selection.activeGameObject) return false;
             var go = command.context as GameObject;

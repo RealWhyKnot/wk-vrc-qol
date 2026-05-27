@@ -26,7 +26,10 @@ Each tool then picks what it needs from those helpers and otherwise stays indepe
 ## What's in the box
 
 - **Weight Sanity Check** -- flags vertices on one side of a humanoid avatar that have non-trivial weight from a bone on the other side. Catches the most common Blender weight-transfer mistake.
-- **Weight Transfer** -- transfers weights between skinned renderers with source-surface matching, bone mapping, and inpainting for rejected vertices.
-- **Mesh Sculpt** -- edits generated skinned-mesh clones in Scene view with vertex selection, move, grab/smooth/inflate brushes, and triangle/quad face fill.
+- **PhysBone Clipping Risks** -- reviews likely PhysBone mesh clipping against selected meshes.
+- **Auto Mesh Fixes** -- stores nondestructive clothing fit fixes and previews generated blendshape output.
+- **Mask Painter** -- paints mask textures directly on avatar meshes in Scene view.
+- **Bone Merger** -- collapses duplicate or stray rig bones onto the intended bone.
+- **PhysBone Preset** -- builds adaptive PhysBone setups from selected bone chains.
 
 More tools to come.

@@ -72,49 +72,6 @@ That tells you exactly why a weight didn't make it into the issue list: below fl
 
 **Limits:** This is a conservative static estimate, not VRChat's full runtime PhysBone solver. Treat rows as "look here" hints for collider, radius, pull, and stiffness tuning.
 
-## Mesh Sculpt (early)
-
-**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Mesh Sculpt...*, or right-click a `SkinnedMeshRenderer` in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Mesh Sculpt...*.
-
-**What it does:** Makes a selected skinned mesh editable inside Unity, then lets you adjust it from the Scene view. The first pass supports vertex selection, moving selected vertices with a position handle, grab/smooth/inflate brushes, and filling a triangle or quad face between existing selected vertices.
-
-**FBX safety.** Before the first edit, the tool creates a generated mesh asset under `Assets/AvatarQol Generated/` when needed and assigns that clone to the renderer. Imported FBX/model sub-assets are not edited in place.
-
-**Scene view controls:**
-
-- **Select** -- click a mesh vertex to select it. Shift-click toggles without clearing the existing selection.
-- **Move** -- drag the Scene view position handle to move selected vertices.
-- **Grab** -- drag on the mesh to pull nearby vertices with brush falloff.
-- **Smooth** -- drag on the mesh to smooth nearby vertices toward their neighbors.
-- **Inflate** -- drag on the mesh to push nearby vertices along baked surface normals.
-
-**Face fill:** Select three or four existing vertices, choose a target submesh/material, then click *Fill Face*. This appends triangles only; it does not create new vertices, so existing UVs, bone weights, bindposes, and blendshape frame sizes remain intact. Use *Flip filled face winding* if the new face is inside-out.
-
-**Current limits:**
-
-- Fill Face supports triangles and quads only.
-- New vertices, arbitrary n-gons, bridge/extrude operations, and corrective blendshape storage are not part of this first pass.
-- Edits are written to the generated mesh clone assigned to the renderer.
-
-## Weight Transfer (early)
-
-**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Weight Transfer...*, or right-click a `SkinnedMeshRenderer` in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Weight Transfer (target this)...*.
-
-**What it does:** Transfers skin weights from a source `SkinnedMeshRenderer` to a target `SkinnedMeshRenderer`. The first pass uses projected source-surface matching, nearest-surface fallback, barycentric blending from source triangle vertices, source-to-target bone mapping, and topology inpainting for target vertices that do not get a confident direct match.
-
-**FBX safety.** Applying creates or reuses a generated mesh asset under `Assets/AvatarQol Generated/` and assigns it to the target renderer before writing weights. Imported FBX/model sub-assets are not edited in place.
-
-**Current controls:**
-
-- **Mode** -- Hybrid Surface, Projected Body Surface, Nearest Surface, or Exact Topology.
-- **Closest max / Projected max** -- distance gates in metres.
-- **Normal angle** -- rejects surface matches with poor normal agreement.
-- **Allow flipped normals** -- opt-in for layered or inside-out meshes.
-- **Inpaint rejected vertices** -- fills unmatched vertices from nearby accepted vertices over target mesh topology.
-- **Max influences / Prune below** -- final `BoneWeight1` cleanup before writing.
-
-**Current limits:** This is the transfer foundation only. Manual weight painting and PhysBone weight cleanup will reuse the same buffer, normalization, pruning, bone mapping, and generated-mesh writer in later passes.
-
 ## Auto Mesh Fixes
 
 **Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes -> Open...*, or right-click an avatar/mesh in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Auto Mesh Fixes...*.
