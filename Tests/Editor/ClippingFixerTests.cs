@@ -109,6 +109,30 @@ namespace WhyKnot.AvatarQol.Tests {
             Assert.AreEqual(before[1], after[1]);
         }
 
+        [Test]
+        public void ApplySelectedToCurrentMeshInPlace_DoesNotMovePhysBoneMotionWarning() {
+            var mesh = CreateTriangle("MovingMesh",
+                new Vector3(0f, 0f, 0f),
+                new Vector3(0.1f, 0f, 0f),
+                new Vector3(1.0f, 1.0f, 0f));
+            var target = CreateRenderer("Moving", mesh);
+            var before = mesh.vertices;
+            var selected = new[] {
+                new ClippingFixer.Issue {
+                    Kind = ClippingFixer.IssueKind.PhysBoneMotion,
+                    Renderer = target,
+                    VertexIndex = 0,
+                    AffectedVertexIndices = new[] { 0 },
+                    PushWorld = new Vector3(10f, 10f, 10f),
+                },
+            };
+
+            var result = ClippingFixer.ApplySelectedToCurrentMeshInPlace(target, selected, useUndo: false);
+
+            Assert.AreEqual(0, result.VerticesMoved);
+            CollectionAssert.AreEqual(before, mesh.vertices);
+        }
+
 #if VRC_SDK_VRCSDK3
         [Test]
         public void Scan_IncludesPhysBoneMotionWarning() {
@@ -152,6 +176,51 @@ namespace WhyKnot.AvatarQol.Tests {
                 i.Kind == ClippingFixer.IssueKind.PhysBoneMotion &&
                 i.DrivenBone == physBoneTransform.transform &&
                 i.ComparisonRenderer == body));
+        }
+
+        [Test]
+        public void ApplyToCurrentMeshInPlace_ReducesPhysBoneMotionWithoutMovingMesh() {
+            var avatar = new GameObject("Avatar");
+            _created.Add(avatar);
+            var animator = avatar.AddComponent<Animator>();
+
+            var physRoot = CreateChild("PhysRoot", avatar.transform, Vector3.zero);
+            var physBoneTransform = CreateChild("PhysBone", physRoot.transform, new Vector3(0f, 0.05f, 0f));
+            var physBone = physRoot.AddComponent<VRCPhysBone>();
+            physBone.rootTransform = physRoot.transform;
+            physBone.pull = 0f;
+            physBone.stiffness = 0f;
+            physBone.spring = 1f;
+            physBone.radius = 0.02f;
+            physBone.maxStretch = 0.25f;
+
+            var bodyBone = CreateChild("BodyBone", avatar.transform, Vector3.zero);
+            var targetMesh = CreateTriangle("MovingMesh",
+                new Vector3(0f, 0.05f, 0f),
+                new Vector3(0.02f, 0.05f, 0f),
+                new Vector3(0f, 0.07f, 0f));
+            var target = CreateWeightedRenderer("Moving", targetMesh, physBoneTransform.transform);
+            var body = CreateWeightedRenderer("Body",
+                CreateTriangle("BodyMesh",
+                    new Vector3(0f, 0.056f, 0f),
+                    new Vector3(0.02f, 0.056f, 0f),
+                    new Vector3(0f, 0.076f, 0f)),
+                bodyBone.transform);
+
+            var beforeVerts = targetMesh.vertices;
+            float beforePull = physBone.pull;
+            var settings = Settings(checkSelf: false);
+            settings.Animator = animator;
+            settings.IncludePhysBoneMotion = true;
+            settings.PhysBoneClearanceMargin = 0.01f;
+            settings.MaxIssuesPerPhysBone = 4;
+
+            var result = ClippingFixer.ApplyToCurrentMeshInPlace(target, new[] { body }, settings, useUndo: false);
+
+            Assert.AreEqual(0, result.VerticesMoved);
+            Assert.Greater(result.PhysBoneSourcesAdjusted, 0);
+            Assert.Greater(physBone.pull, beforePull);
+            CollectionAssert.AreEqual(beforeVerts, targetMesh.vertices);
         }
 #endif
 

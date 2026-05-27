@@ -65,6 +65,18 @@ namespace WhyKnot.AvatarQol.Tests {
             }
         }
 
+        [Test]
+        public void SelectionAndPreviewControlsStayVisible() {
+            var packageRoot = LocatePackageRoot();
+            string window = ReadSource(packageRoot, "Editor/Tools/ClippingFixerWindow.cs");
+            string issues = ReadSource(packageRoot, "Editor/Tools/ClippingFixerWindow.Issues.cs");
+
+            StringAssert.Contains("new Vector2(900, 680)", window);
+            StringAssert.Contains("Stop wobble", issues);
+            StringAssert.Contains("Add component (", issues);
+            StringAssert.Contains("Add component also uses the current selection", issues);
+        }
+
         // Walks up from this test's source directory until it finds the
         // package's package.json (or hits the filesystem root). Keeps the
         // test independent of where the package is placed in the project.

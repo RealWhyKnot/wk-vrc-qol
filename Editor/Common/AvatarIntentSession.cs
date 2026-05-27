@@ -6,17 +6,19 @@
 // go back on every renderer, generated meshes are destroyed, components
 // spawned during the run are removed in reverse order.
 //
-// Three categories of tracked state:
+// Four categories of tracked state:
 //   1. Renderer originals: Capture(renderer) snapshots sharedMesh +
 //      every blendshape weight so a later RestoreOnDispose puts the
 //      renderer back exactly the way it was before the run touched it.
 //      Repeated Capture calls for the same renderer are no-ops -- first
 //      capture wins so multiple ops on the same renderer share one
 //      original.
-//   2. Generated Unity Objects (meshes, scriptable assets): Adopt(obj)
+//   2. Component originals: Capture(component) snapshots serialized fields
+//      so temporary play/build changes can be restored after the run.
+//   3. Generated Unity Objects (meshes, scriptable assets): Adopt(obj)
 //      tracks the object and DestroyImmediate-s it on Dispose. Use for
 //      cloned meshes the run created.
-//   3. Spawned scene components: RememberSpawnedComponent(c) records a
+//   4. Spawned scene components: RememberSpawnedComponent(c) records a
 //      component the run added to a GameObject. Dispose destroys them in
 //      LIFO order so dependency chains (e.g., a PhysBoneCollider added
 //      then a PhysBone that references it) unwind cleanly.
@@ -33,6 +35,7 @@
 // in the undo stack and balloon memory. Lifetime is owned by this Session.
 
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 
 namespace WhyKnot.AvatarQol.Intent {
@@ -41,17 +44,25 @@ namespace WhyKnot.AvatarQol.Intent {
 
         private readonly Dictionary<SkinnedMeshRenderer, RendererState> _states =
             new Dictionary<SkinnedMeshRenderer, RendererState>();
+        private readonly Dictionary<Component, ComponentState> _componentStates =
+            new Dictionary<Component, ComponentState>();
         private readonly List<Object> _generated = new List<Object>();
         private readonly List<Component> _spawnedComponents = new List<Component>();
 
-        public bool HasChanges => _states.Count > 0 || _generated.Count > 0 || _spawnedComponents.Count > 0;
+        public bool HasChanges => _states.Count > 0 || _componentStates.Count > 0 || _generated.Count > 0 || _spawnedComponents.Count > 0;
         public int CapturedRendererCount => _states.Count;
+        public int CapturedComponentCount => _componentStates.Count;
         public int GeneratedObjectCount => _generated.Count;
         public int SpawnedComponentCount => _spawnedComponents.Count;
 
         public void Capture(SkinnedMeshRenderer renderer) {
             if (renderer == null || _states.ContainsKey(renderer)) return;
             _states[renderer] = new RendererState(renderer);
+        }
+
+        public void Capture(Component component) {
+            if (component == null || _componentStates.ContainsKey(component)) return;
+            _componentStates[component] = new ComponentState(component);
         }
 
         public void Adopt(Object generated) {
@@ -67,9 +78,13 @@ namespace WhyKnot.AvatarQol.Intent {
             foreach (var kv in other._states) {
                 if (kv.Key != null && !_states.ContainsKey(kv.Key)) _states[kv.Key] = kv.Value;
             }
+            foreach (var kv in other._componentStates) {
+                if (kv.Key != null && !_componentStates.ContainsKey(kv.Key)) _componentStates[kv.Key] = kv.Value;
+            }
             foreach (var g in other._generated) if (g != null) _generated.Add(g);
             foreach (var c in other._spawnedComponents) if (c != null) _spawnedComponents.Add(c);
             other._states.Clear();
+            other._componentStates.Clear();
             other._generated.Clear();
             other._spawnedComponents.Clear();
         }
@@ -88,6 +103,9 @@ namespace WhyKnot.AvatarQol.Intent {
 
             foreach (var state in _states.Values) state.Restore();
             _states.Clear();
+
+            foreach (var state in _componentStates.Values) state.Restore();
+            _componentStates.Clear();
 
             for (int i = _generated.Count - 1; i >= 0; i--) {
                 var obj = _generated[i];
@@ -111,6 +129,22 @@ namespace WhyKnot.AvatarQol.Intent {
                 if (_renderer == null) return;
                 _renderer.sharedMesh = _mesh;
                 BlendShapeUtility.RestoreWeights(_renderer, _mesh, _weightsByName);
+            }
+        }
+
+        private sealed class ComponentState {
+            private readonly Component _component;
+            private readonly string _json;
+
+            public ComponentState(Component component) {
+                _component = component;
+                _json = component != null ? EditorJsonUtility.ToJson(component) : "";
+            }
+
+            public void Restore() {
+                if (_component == null || string.IsNullOrEmpty(_json)) return;
+                EditorJsonUtility.FromJsonOverwrite(_json, _component);
+                EditorUtility.SetDirty(_component);
             }
         }
     }

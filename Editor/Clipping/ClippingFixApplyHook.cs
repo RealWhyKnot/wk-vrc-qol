@@ -154,6 +154,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                 summary.WarningsFound += result.IssuesFound;
                 summary.VerticesMoved += result.VerticesMoved;
                 summary.RenderersTouched += result.RenderersTouched;
+                summary.PhysBoneSourcesAdjusted += result.PhysBoneSourcesAdjusted;
                 if (result.ConfigurationError) summary.IntentsSkipped++;
 
                 if (log != null) {
@@ -207,11 +208,11 @@ namespace WhyKnot.AvatarQol.Clipping {
 
         private static void LogSummary(RunSummary s) {
             if (s.IntentsProcessed == 0 && s.IntentsSkipped == 0) return;
-            if (s.WarningsFound == 0 && s.VerticesMoved == 0) return;
+            if (s.WarningsFound == 0 && s.VerticesMoved == 0 && s.PhysBoneSourcesAdjusted == 0) return;
             AvatarQolLogger.Instance.Info(
                 $"ClippingFix {s.Context}: processed {s.IntentsProcessed} intent(s) " +
                 $"(skipped {s.IntentsSkipped}), touched {s.RenderersTouched} renderer(s), " +
-                $"moved {s.VerticesMoved} vertices from {s.WarningsFound} warning(s).");
+                $"moved {s.VerticesMoved} vertices and adjusted {s.PhysBoneSourcesAdjusted} PhysBone source(s) from {s.WarningsFound} warning(s).");
         }
 
         private struct RunSummary {
@@ -221,6 +222,7 @@ namespace WhyKnot.AvatarQol.Clipping {
             public int RenderersTouched;
             public int WarningsFound;
             public int VerticesMoved;
+            public int PhysBoneSourcesAdjusted;
         }
     }
 }

@@ -49,7 +49,13 @@ namespace WhyKnot.AvatarQol.Tools {
         internal static void Open(bool prefillFromSelection) {
             var w = GetWindow<ClippingFixerWindow>(false, "Clipping Fixer", true);
             w.titleContent = WkStyles.TitleContent("Avatar QoL - Clipping Fixer");
-            w.minSize = new Vector2(620, 460);
+            w.minSize = new Vector2(900, 680);
+            if (w.position.width < 900f || w.position.height < 680f) {
+                var pos = w.position;
+                pos.width = Mathf.Max(pos.width, 960f);
+                pos.height = Mathf.Max(pos.height, 720f);
+                w.position = pos;
+            }
             if (prefillFromSelection) w.PrefillFromSelection();
             w.Show();
             w.Focus();

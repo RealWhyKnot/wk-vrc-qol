@@ -32,7 +32,7 @@ namespace WhyKnot.AvatarQol.Tools {
 #endif
         }
 
-        internal static MotionReductionResult ReduceMotionIssues(IList<Issue> issues, StringBuilder log = null) {
+        internal static MotionReductionResult ReduceMotionIssues(IList<Issue> issues, StringBuilder log = null, bool useUndo = true) {
 #if !VRC_SDK_VRCSDK3
             return new MotionReductionResult {
                 UnsupportedSources = issues == null ? 0 : issues.Count,
@@ -51,7 +51,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 var component = issue.PhysBoneComponent;
                 if (fixedComponents.Contains(component) || unsupportedComponents.Contains(component)) continue;
 
-                bool changed = ApplyMotionReduction(component, issue, log);
+                bool changed = ApplyMotionReduction(component, issue, log, useUndo);
                 if (changed) {
                     fixedComponents.Add(component);
                 } else {
@@ -70,21 +70,21 @@ namespace WhyKnot.AvatarQol.Tools {
         }
 
 #if VRC_SDK_VRCSDK3
-        private static bool ApplyMotionReduction(Component component, Issue issue, StringBuilder log) {
+        private static bool ApplyMotionReduction(Component component, Issue issue, StringBuilder log, bool useUndo) {
             if (component == null) return false;
             if (component is VRCPhysBone pb) {
-                return ApplyLivePhysBoneMotionReduction(pb, issue, log);
+                return ApplyLivePhysBoneMotionReduction(pb, issue, log, useUndo);
             }
 
             if (LooksLikeMarshmallowAuthoringComponent(component)) {
-                return ApplyMarshmallowMotionReduction(component, issue, log);
+                return ApplyMarshmallowMotionReduction(component, issue, log, useUndo);
             }
 
-            return ApplyReflectedMotionReduction(component, issue, log);
+            return ApplyReflectedMotionReduction(component, issue, log, useUndo);
         }
 
-        private static bool ApplyLivePhysBoneMotionReduction(VRCPhysBone pb, Issue issue, StringBuilder log) {
-            Undo.RecordObject(pb, "Avatar QoL PhysBone clipping motion reduction");
+        private static bool ApplyLivePhysBoneMotionReduction(VRCPhysBone pb, Issue issue, StringBuilder log, bool useUndo) {
+            if (useUndo) Undo.RecordObject(pb, "Avatar QoL PhysBone clipping motion reduction");
             bool high = issue != null && issue.Severity == Severity.High;
             bool changed = false;
 
@@ -128,8 +128,8 @@ namespace WhyKnot.AvatarQol.Tools {
             return changed;
         }
 
-        private static bool ApplyMarshmallowMotionReduction(Component component, Issue issue, StringBuilder log) {
-            Undo.RecordObject(component, "Avatar QoL PhysBone clipping motion reduction");
+        private static bool ApplyMarshmallowMotionReduction(Component component, Issue issue, StringBuilder log, bool useUndo) {
+            if (useUndo) Undo.RecordObject(component, "Avatar QoL PhysBone clipping motion reduction");
             bool high = issue != null && issue.Severity == Severity.High;
             bool changed = false;
 
@@ -153,8 +153,8 @@ namespace WhyKnot.AvatarQol.Tools {
             return changed;
         }
 
-        private static bool ApplyReflectedMotionReduction(Component component, Issue issue, StringBuilder log) {
-            Undo.RecordObject(component, "Avatar QoL PhysBone clipping motion reduction");
+        private static bool ApplyReflectedMotionReduction(Component component, Issue issue, StringBuilder log, bool useUndo) {
+            if (useUndo) Undo.RecordObject(component, "Avatar QoL PhysBone clipping motion reduction");
             bool high = issue != null && issue.Severity == Severity.High;
             bool changed = false;
 

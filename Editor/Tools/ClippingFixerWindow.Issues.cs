@@ -26,9 +26,9 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 using (new EditorGUI.DisabledScope(_issues.Count == 0)) {
                     if (WkStyles.PrimaryButtonInline(
-                            new GUIContent("Add fix component",
-                                "Non-destructive. Adds or updates a WhyKnotClippingFixIntent on the target mesh. If warnings are selected, the saved comparison list and motion checks are limited to those warning sources."),
-                            GUILayout.Width(160))) {
+                            new GUIContent(selectedCount > 0 ? $"Add component ({selectedCount} selected)" : "Add fix component",
+                                "Non-destructive. Adds or updates a WhyKnotClippingFixIntent on the target mesh. If warnings are selected, only those warning sources and motion checks are saved."),
+                            GUILayout.Width(190))) {
                         SaveFixAsComponent();
                     }
                     if (GUILayout.Button(
@@ -44,6 +44,14 @@ namespace WhyKnot.AvatarQol.Tools {
                                 "Drop the current warning list and clear Scene view markers."),
                             GUILayout.Height(28), GUILayout.Width(70))) {
                         ClearResults();
+                    }
+                }
+                using (new EditorGUI.DisabledScope(_previewBone == null)) {
+                    if (GUILayout.Button(
+                            new GUIContent("Stop wobble",
+                                "Stop the active driven-bone wobble preview and restore its rest rotation."),
+                            GUILayout.Height(28), GUILayout.Width(96))) {
+                        StopPreview();
                     }
                 }
                 GUILayout.FlexibleSpace();
@@ -86,10 +94,10 @@ namespace WhyKnot.AvatarQol.Tools {
 
             if (_issues.Count > 0) {
                 string selectionText = selectedCount > 0
-                    ? $" {selectedCount} selected warning(s) will be used by destructive apply."
-                    : " With nothing selected, destructive apply uses all warnings.";
+                    ? $" {selectedCount} selected warning(s) will be used by Add component and destructive apply."
+                    : " With nothing selected, Add component and destructive apply use all warnings.";
                 WkStyles.Notice(NoticeKind.Warning,
-                    $"{_issues.Count} clipping warning(s) found.{selectionText} Use the component flow for fixes that should survive mesh re-imports; use destructive apply for a generated mesh asset you can inspect now.");
+                    $"{_issues.Count} clipping warning(s) found.{selectionText} Add component also uses the current selection.");
             }
 
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
@@ -147,9 +155,14 @@ namespace WhyKnot.AvatarQol.Tools {
                     }
                 }
                 using (new EditorGUI.DisabledScope(issue.DrivenBone == null)) {
-                    if (GUILayout.Button(new GUIContent("Wobble", "Temporarily rotate the driven bone to preview the motion direction."),
+                    bool isPreviewing = issue.DrivenBone != null && _previewBone == issue.DrivenBone;
+                    if (GUILayout.Button(new GUIContent(isPreviewing ? "Stop" : "Wobble",
+                            isPreviewing
+                                ? "Stop wobbling this driven bone and restore its rest rotation."
+                                : "Temporarily rotate the driven bone to preview the motion direction."),
                             WkStyles.MiniRowButton, GUILayout.Width(58))) {
-                        StartPreview(issue.DrivenBone);
+                        if (isPreviewing) StopPreview();
+                        else StartPreview(issue.DrivenBone);
                     }
                 }
             }
@@ -236,9 +249,9 @@ namespace WhyKnot.AvatarQol.Tools {
             int selectedCount = SelectedWarningCount();
             string msg =
                 "Add or update a Clipping Fix component on the target mesh?\n\n" +
-                "At play-mode entry and avatar upload, it re-scans this renderer's current mesh against the saved comparison mesh list, clones the target mesh in memory, and pushes clipping vertices out. The source mesh asset is never modified.\n\n" +
+                "At play-mode entry and avatar upload, it re-scans this renderer's current mesh against the saved comparison mesh list. Mesh clipping warnings clone the target mesh in memory and push vertices out. PhysBone motion warnings temporarily tighten the matching PhysBone source during the run. The source mesh asset is never modified.\n\n" +
                 (selectedCount > 0
-                    ? "Only the selected warning sources and relevant motion checks will be stored on the component."
+                    ? $"The component will use only the {selectedCount} selected warning(s)."
                     : "No warnings are selected, so the current comparison mesh list and scan options are stored.");
             if (!EditorUtility.DisplayDialog("Add fix component", msg, "Add component", "Cancel")) return;
 
@@ -292,7 +305,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
             string msg =
                 $"Apply a destructive clipping fix to {_targetRenderer.name}?\n\n" +
-                $"The target mesh will be cloned to {ClippingFixer.GeneratedFolder}/, the renderer will be rewired to that clone, and the fix will be written into the clone. The original mesh asset is not modified.\n\n" +
+                $"Mesh clipping warnings clone the target mesh to {ClippingFixer.GeneratedFolder}/, rewire the renderer, and write vertex fixes into the clone. PhysBone motion warnings adjust the matching PhysBone source settings with Undo support.\n\n" +
                 (selectedCount > 0
                     ? $"{selectedCount} selected warning(s) will be applied. Unselected warnings are left for a later pass.\n\n"
                     : "No warnings are selected, so every current warning will be applied.\n\n") +
