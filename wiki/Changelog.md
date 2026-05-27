@@ -11,6 +11,12 @@ The most recent release is at the top.
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v1.4.0-beta.1](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.4.0-beta.1) -- 2026-05-27
+
 ### Added
 - **weight-transfer:** Add surface weight transfer (88105a0)
 - **mesh-sculpt:** Add generated mesh sculptor (465d6af)
