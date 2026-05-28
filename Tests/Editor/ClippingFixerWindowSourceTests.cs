@@ -19,6 +19,7 @@ namespace WhyKnot.AvatarQol.Tests {
 
         private static readonly string[] PhysBoneSourcePaths = {
             "Editor/Clipping/ClippingFixer.cs",
+            "Editor/Clipping/ClippingFixer.Scan.cs",
             "Editor/Clipping/ClippingFixApplyHook.cs",
             "Editor/Tools/ClippingFixerWindow.Scan.cs",
             "Runtime/Clipping/WhyKnotClippingFixIntent.cs",
@@ -54,7 +55,11 @@ namespace WhyKnot.AvatarQol.Tests {
         [Test]
         public void ClippingFixerKeepsPhysBoneMotionPathWired() {
             var packageRoot = LocatePackageRoot();
-            string core = ReadSource(packageRoot, "Editor/Clipping/ClippingFixer.cs");
+            string core = ReadSources(
+                packageRoot,
+                "Editor/Clipping/ClippingFixer.cs",
+                "Editor/Clipping/ClippingFixer.Scan.cs",
+                "Editor/Clipping/ClippingFixer.Apply.cs");
             StringAssert.Contains("IssueKind.PhysBoneMotion", core);
             StringAssert.Contains("PhysBoneClippingAnalyzer.ScanOneMesh", core);
             StringAssert.Contains("IncludePhysBoneMotion", core);
@@ -69,7 +74,11 @@ namespace WhyKnot.AvatarQol.Tests {
         [Test]
         public void PhysBoneMotionFixDoesNotEditPhysBoneSettings() {
             var packageRoot = LocatePackageRoot();
-            string core = ReadSource(packageRoot, "Editor/Clipping/ClippingFixer.cs");
+            string core = ReadSources(
+                packageRoot,
+                "Editor/Clipping/ClippingFixer.cs",
+                "Editor/Clipping/ClippingFixer.Scan.cs",
+                "Editor/Clipping/ClippingFixer.Apply.cs");
             string hook = ReadSource(packageRoot, "Editor/Clipping/ClippingFixApplyHook.cs");
             string window = ReadSource(packageRoot, "Editor/Tools/ClippingFixerWindow.Issues.cs");
 
@@ -87,7 +96,8 @@ namespace WhyKnot.AvatarQol.Tests {
             string window = ReadSource(packageRoot, "Editor/Tools/ClippingFixerWindow.cs");
             string issues = ReadSource(packageRoot, "Editor/Tools/ClippingFixerWindow.Issues.cs");
 
-            StringAssert.Contains("new Vector2(900, 680)", window);
+            StringAssert.Contains("new Vector2(720, 520)", window);
+            StringAssert.Contains("new Vector2(1040f, 780f)", window);
             StringAssert.Contains("Stop wobble", issues);
             StringAssert.Contains("Add fix component", issues);
             StringAssert.Contains("Warning selection is only used by destructive apply", issues);
@@ -119,6 +129,12 @@ namespace WhyKnot.AvatarQol.Tests {
             var fullPath = Path.Combine(packageRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
             Assert.IsTrue(File.Exists(fullPath), $"Expected to find {relativePath} under {packageRoot}.");
             return File.ReadAllText(fullPath);
+        }
+
+        private static string ReadSources(string packageRoot, params string[] relativePaths) {
+            return string.Join("\n", System.Array.ConvertAll(
+                relativePaths,
+                relativePath => ReadSource(packageRoot, relativePath)));
         }
     }
 }
