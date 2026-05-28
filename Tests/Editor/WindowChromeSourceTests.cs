@@ -17,11 +17,9 @@ namespace WhyKnot.AvatarQol.Tests {
             "Editor/Internal/Logging/WkLogViewerWindow.cs",
             "Editor/Tools/BoneMergerWindow.cs",
             "Editor/Tools/MaskPainter/MaskPainterWindow.UI.cs",
-            "Editor/Tools/MeshSculpt/MeshSculptWindow.cs",
             "Editor/Tools/ClippingFixerWindow.cs",
             "Editor/Tools/PhysBonePreset/PhysBonePresetWindow.cs",
             "Editor/Tools/UvTextureTransfer/UvTextureTransferWindow.cs",
-            "Editor/Tools/WeightTransfer/WeightTransferWindow.cs",
             "Editor/Tools/WeightSanityCheckWindow.cs",
         };
 
@@ -31,11 +29,9 @@ namespace WhyKnot.AvatarQol.Tests {
             "Editor/Internal/Logging/WkLogViewerWindow.cs",
             "Editor/Tools/BoneMergerWindow.cs",
             "Editor/Tools/MaskPainter/MaskPainterWindow.cs",
-            "Editor/Tools/MeshSculpt/MeshSculptWindow.cs",
             "Editor/Tools/ClippingFixerWindow.cs",
             "Editor/Tools/PhysBonePreset/PhysBonePresetWindow.cs",
             "Editor/Tools/UvTextureTransfer/UvTextureTransferWindow.cs",
-            "Editor/Tools/WeightTransfer/WeightTransferWindow.cs",
             "Editor/Tools/WeightSanityCheckWindow.cs",
         };
 

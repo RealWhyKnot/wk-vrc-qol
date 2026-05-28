@@ -37,6 +37,7 @@
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using WhyKnot.AvatarQol.Internal.Utilities;
 
 namespace WhyKnot.AvatarQol.Intent {
 
