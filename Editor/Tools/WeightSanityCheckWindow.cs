@@ -126,6 +126,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private int _lastScanCenterVerts;
         private Vector2 _scroll;
         private Vector2 _pageScroll;
+        private string _autoSizeSignature;
 
         // Preview state - at most one bone is animated at a time. Bone is
         // wobbled around its rest rotation; on stop we restore.
@@ -196,6 +197,23 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 WkStyles.WindowFooter();
             }
+            RequestAutoSize();
+        }
+
+        private void RequestAutoSize() {
+            var animatorId = _animator != null ? _animator.GetInstanceID() : 0;
+            var limitId = _limitToRenderer != null ? _limitToRenderer.GetInstanceID() : 0;
+            var signature = $"{animatorId}|{limitId}|{_issues.Count}|{SelectedIssueCount()}|{_scanSummary}|{_advancedOpen}|{_excludedRenderers.Count}|{_nonReadableRenderers.Count}";
+            var preferred = new Vector2(
+                _issues.Count > 0 ? 900f : 680f,
+                390f + WkStyles.CappedListHeight(_issues.Count, 24f, 120f, 280f) + (_advancedOpen ? 120f : 0f));
+            WkStyles.AutoSizeWindow(
+                this,
+                ref _autoSizeSignature,
+                signature,
+                new Vector2(600f, 460f),
+                preferred,
+                new Vector2(1040f, 780f));
         }
 
 

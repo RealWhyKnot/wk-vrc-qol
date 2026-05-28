@@ -37,6 +37,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private Vector2 _pageScroll;
         private string _scanSummary = "";
         private int _lastSurfaceRendererCount;
+        private string _autoSizeSignature;
 
         private Transform _previewBone;
         private Quaternion _previewRestRotation;
@@ -48,13 +49,7 @@ namespace WhyKnot.AvatarQol.Tools {
         internal static void Open(bool prefillFromSelection) {
             var w = GetWindow<ClippingFixerWindow>(false, "Clipping Fixer", true);
             w.titleContent = WkStyles.TitleContent("Avatar QoL - Clipping Fixer");
-            w.minSize = new Vector2(900, 680);
-            if (w.position.width < 900f || w.position.height < 680f) {
-                var pos = w.position;
-                pos.width = Mathf.Max(pos.width, 960f);
-                pos.height = Mathf.Max(pos.height, 720f);
-                w.position = pos;
-            }
+            w.minSize = new Vector2(720, 520);
             if (prefillFromSelection) w.PrefillFromSelection();
             w.Show();
             w.Focus();
@@ -99,6 +94,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 WkStyles.WindowFooter();
             }
+            RequestAutoSize();
         }
 
         private void DrawTitleBar() {
@@ -114,6 +110,22 @@ namespace WhyKnot.AvatarQol.Tools {
                     Application.OpenURL(WikiUrl);
                 }
             }
+        }
+
+        private void RequestAutoSize() {
+            var animatorId = _animator != null ? _animator.GetInstanceID() : 0;
+            var targetId = _targetRenderer != null ? _targetRenderer.GetInstanceID() : 0;
+            var signature = $"{animatorId}|{targetId}|{_comparisonRenderers.Count}|{_issues.Count}|{SelectedWarningCount()}|{_scanSummary}|{_checkSelf}|{_includePhysBoneMotion}";
+            var preferred = new Vector2(
+                _issues.Count > 0 ? 960f : 760f,
+                430f + WkStyles.CappedListHeight(_issues.Count, 28f, 120f, 260f));
+            WkStyles.AutoSizeWindow(
+                this,
+                ref _autoSizeSignature,
+                signature,
+                new Vector2(720f, 520f),
+                preferred,
+                new Vector2(1040f, 780f));
         }
 
     }

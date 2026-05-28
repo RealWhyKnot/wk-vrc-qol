@@ -28,7 +28,12 @@ namespace WhyKnot.AvatarQol.Tools {
                 new GUIContent("3. Review plan",
                     "What will be created if you click Apply. Nothing is written to the scene until then."),
                 WkStyles.SubsectionTitle);
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
+            var planRows = _plan != null
+                ? _plan.PhysBones.Count + _plan.Colliders.Count + _plan.Notes.Count
+                : 0;
+            using (new EditorGUILayout.VerticalScope(
+                    EditorStyles.helpBox,
+                    GUILayout.Height(WkStyles.CappedListHeight(planRows, 20f, 120f, 280f)))) {
                 _planScroll = EditorGUILayout.BeginScrollView(_planScroll);
                 if (_plan == null || (_plan.PhysBones.Count == 0 && _plan.Colliders.Count == 0)) {
                     EditorGUILayout.LabelField(

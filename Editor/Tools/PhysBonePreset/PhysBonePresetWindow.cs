@@ -50,6 +50,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private Vector2 _selectionScroll;
         private Vector2 _planScroll;
         private Vector2 _pageScroll;
+        private string _autoSizeSignature;
 
         // Post-apply tweak state. After Apply, we cache the just-created
         // components and a snapshot of their original parameters so the
@@ -141,6 +142,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 WkStyles.WindowFooter();
             }
+            RequestAutoSize();
         }
 
         private void DrawTitleBar() {
@@ -162,6 +164,26 @@ namespace WhyKnot.AvatarQol.Tools {
             if (PhysBonePlanApplier.SdkAvailable) return;
             WkStyles.Notice(NoticeKind.Warning,
                 "VRChat SDK 3 (PhysBone) is not installed in this project. The window will analyse selections and preview plans, but Apply is disabled.");
+        }
+
+        private void RequestAutoSize() {
+            var planPhysBones = _plan != null && _plan.PhysBones != null ? _plan.PhysBones.Count : 0;
+            var planColliders = _plan != null && _plan.Colliders != null ? _plan.Colliders.Count : 0;
+            var tweakCount = _tweakSnapshots != null ? _tweakSnapshots.Count : 0;
+            var signature = $"{_selection.Count}|{_presets.Count}|{_selectedPresetId}|{planPhysBones}|{planColliders}|{_advancedOpen}|{tweakCount}";
+            var preferred = new Vector2(
+                760f,
+                500f
+                    + WkStyles.CappedListHeight(_selection.Count, 22f, 70f, 150f)
+                    + WkStyles.CappedListHeight(planPhysBones + planColliders, 20f, 120f, 280f)
+                    + (_advancedOpen ? 80f : 0f));
+            WkStyles.AutoSizeWindow(
+                this,
+                ref _autoSizeSignature,
+                signature,
+                new Vector2(640f, 580f),
+                preferred,
+                new Vector2(980f, 800f));
         }
 
 

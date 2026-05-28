@@ -44,8 +44,17 @@ namespace WhyKnot.AvatarQol.Internal {
         /// <summary>When true (default), the WhyKnot brand signature renders at the bottom.</summary>
         protected virtual bool ShowBrandFooter => true;
 
-        /// <summary>When true (default), title chrome uses the shared accent divider.</summary>
-        protected virtual bool ShowAccentDivider => true;
+        /// <summary>When true (default), title chrome uses a subtle animated accent line.</summary>
+        protected virtual bool AnimateChrome => true;
+
+        /// <summary>Preferred size used when the window opens or its content signature changes.</summary>
+        protected virtual Vector2 PreferredSize => InitialMinSize;
+
+        /// <summary>Upper bound used only for automatic fitting. Users can still resize larger manually.</summary>
+        protected virtual Vector2 MaxAutoSize => WkStyles.DefaultMaxAutoWindowSize;
+
+        /// <summary>Content signature that triggers a one-shot automatic resize when it changes.</summary>
+        protected virtual string AutoSizeSignature => Title;
 
         /// <summary>Subclass-supplied window body. Called inside the theme scope.</summary>
         protected abstract void OnBodyGUI();
@@ -65,9 +74,29 @@ namespace WhyKnot.AvatarQol.Internal {
         protected virtual void OnEnable() {
             titleContent = WkStyles.TitleContent(Title);
             minSize = InitialMinSize;
+            EditorApplication.update -= RepaintAnimatedChrome;
+            if (AnimateChrome) EditorApplication.update += RepaintAnimatedChrome;
         }
 
         protected virtual void OnDisable() {
+            EditorApplication.update -= RepaintAnimatedChrome;
+        }
+
+        private double _nextAnimatedRepaint;
+        private string _lastAutoSizeSignature;
+        private void RepaintAnimatedChrome() {
+            if (!AnimateChrome) return;
+            WkStyles.RepaintAnimatedChrome(this, ref _nextAnimatedRepaint);
+        }
+
+        protected void RequestAutoSize() {
+            WkStyles.AutoSizeWindow(
+                this,
+                ref _lastAutoSizeSignature,
+                AutoSizeSignature,
+                InitialMinSize,
+                PreferredSize,
+                MaxAutoSize);
         }
 
         private Vector2 _scroll;
@@ -76,7 +105,7 @@ namespace WhyKnot.AvatarQol.Internal {
             using (WkStyles.Scope(Theme)) {
                 using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
                     WkStyles.TitleBar(Title, HelpUrl);
-                    if (ShowAccentDivider) WkStyles.AnimatedAccentLine();
+                    if (AnimateChrome) WkStyles.AnimatedAccentLine();
                     else WkStyles.Divider();
 
                     if (ShowScrollView) {
@@ -93,18 +122,19 @@ namespace WhyKnot.AvatarQol.Internal {
 
                     if (ShowFooter || ShowBrandFooter) {
                         WkStyles.Divider();
-                        using (new EditorGUILayout.HorizontalScope()) {
-                            if (ShowBrandFooter) {
-                                WkStyles.BrandFooter();
-                            }
-                            if (ShowFooter) {
+                        if (ShowFooter) {
+                            using (new EditorGUILayout.HorizontalScope()) {
                                 GUILayout.FlexibleSpace();
                                 OnFooterGUI();
                             }
                         }
+                        if (ShowBrandFooter) {
+                            WkStyles.BrandFooter();
+                        }
                     }
                 }
             }
+            RequestAutoSize();
         }
     }
 }

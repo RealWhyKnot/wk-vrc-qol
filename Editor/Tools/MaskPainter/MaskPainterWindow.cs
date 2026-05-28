@@ -162,13 +162,14 @@ namespace WhyKnot.AvatarQol.Tools {
         private GUIStyle _hudHeaderStyle;
         private GUIStyle _hudHintStyle;
         private Vector2 _pageScroll;
+        private string _autoSizeSignature;
 
         // ---- Entry points ----
 
         internal static void Open(SkinnedMeshRenderer prefillRenderer) {
             var w = GetWindow<MaskPainterWindow>(false, "Paint Mask", true);
             w.titleContent = WkStyles.TitleContent("Avatar QoL - Paint Mask");
-            w.minSize = new Vector2(440, 720);
+            w.minSize = new Vector2(440, 640);
             if (prefillRenderer != null) {
                 w._renderer = prefillRenderer;
                 w.AutoDetectSymmetryRoot();

@@ -100,7 +100,9 @@ namespace WhyKnot.AvatarQol.Tools {
                     $"{_issues.Count} clipping warning(s) found.{selectionText} Add component saves the current settings, not selected rows.");
             }
 
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
+            using (new EditorGUILayout.VerticalScope(
+                    EditorStyles.helpBox,
+                    GUILayout.Height(WkStyles.CappedListHeight(_issues.Count, 28f, 120f, 260f)))) {
                 if (_issues.Count == 0) {
                     EditorGUILayout.LabelField(
                         _scanSummary == "" ? "Pick one target mesh, add a body/comparison mesh, then scan." : "No clipping warnings found.",

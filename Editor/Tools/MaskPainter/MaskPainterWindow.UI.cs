@@ -43,6 +43,22 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 WkStyles.WindowFooter();
             }
+            RequestAutoSize();
+        }
+
+        private void RequestAutoSize() {
+            var rendererId = _renderer != null ? _renderer.GetInstanceID() : 0;
+            var signature = $"{rendererId}|{_painting}|{_maskRT != null}|{_advancedOpen}|{_strokeCount}|{_resolution}|{_mode}|{_channel}";
+            var preferred = new Vector2(
+                _painting || _maskRT != null ? 620f : 500f,
+                _painting || _maskRT != null ? 800f : 720f);
+            WkStyles.AutoSizeWindow(
+                this,
+                ref _autoSizeSignature,
+                signature,
+                new Vector2(440f, 640f),
+                preferred,
+                new Vector2(820f, 820f));
         }
 
         private void DrawStatusBanner() {

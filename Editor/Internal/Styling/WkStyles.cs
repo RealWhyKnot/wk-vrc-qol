@@ -274,6 +274,64 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
         /// <summary>Default labelled-row label width for LabeledField.</summary>
         public const float LabelColumn = 110f;
 
+        /// <summary>Default upper bound for automatic editor-window fitting.</summary>
+        public static readonly Vector2 DefaultMaxAutoWindowSize = new Vector2(980f, 760f);
+
+        /// <summary>Clamp a content-driven list height so long lists scroll instead of stretching the window.</summary>
+        public static float CappedListHeight(int itemCount, float rowHeight = 20f, float minHeight = 80f, float maxHeight = 260f) {
+            var count = Mathf.Max(0, itemCount);
+            return Mathf.Clamp(count * rowHeight + 12f, minHeight, maxHeight);
+        }
+
+        /// <summary>Clamp a preferred window size against minimum and automatic-fit maximum bounds.</summary>
+        public static Vector2 ClampAutoWindowSize(Vector2 preferredSize, Vector2 minSize, Vector2 maxAutoSize) {
+            var max = new Vector2(
+                Mathf.Max(minSize.x, maxAutoSize.x),
+                Mathf.Max(minSize.y, maxAutoSize.y));
+            return new Vector2(
+                Mathf.Clamp(preferredSize.x, minSize.x, max.x),
+                Mathf.Clamp(preferredSize.y, minSize.y, max.y));
+        }
+
+        /// <summary>
+        /// Resize an EditorWindow when a caller-supplied content signature changes.
+        /// Long content should still live in capped scroll views; this only fits the chrome and active sections.
+        /// </summary>
+        public static bool AutoSizeWindow(
+                EditorWindow window,
+                ref string lastSignature,
+                string signature,
+                Vector2 minSize,
+                Vector2 preferredSize,
+                Vector2 maxAutoSize) {
+            if (window == null) return false;
+            window.minSize = minSize;
+
+            var normalized = signature ?? "";
+            if (lastSignature == normalized) return false;
+            lastSignature = normalized;
+
+            ScheduleAutoSize(window, minSize, preferredSize, maxAutoSize);
+            return true;
+        }
+
+        public static void ScheduleAutoSize(
+                EditorWindow window,
+                Vector2 minSize,
+                Vector2 preferredSize,
+                Vector2 maxAutoSize) {
+            if (window == null) return;
+            var target = ClampAutoWindowSize(preferredSize, minSize, maxAutoSize);
+            EditorApplication.delayCall += () => {
+                if (window == null) return;
+                window.minSize = minSize;
+                var pos = window.position;
+                if (pos.width <= 1f || pos.height <= 1f) return;
+                if (Mathf.Abs(pos.width - target.x) < 1f && Mathf.Abs(pos.height - target.y) < 1f) return;
+                window.position = new Rect(pos.x, pos.y, target.x, target.y);
+            };
+        }
+
         // ---- Primitives ---------------------------------------------------
 
         /// <summary>
@@ -327,22 +385,24 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
             EditorGUI.DrawRect(rect, ColorDivider);
         }
 
-        /// <summary>Theme accent colour kept as a compatibility helper for older call sites.</summary>
+        /// <summary>Theme-coloured animation accent. Deterministic for tests when a time value is supplied.</summary>
         public static Color AnimatedAccentColor(double timeSeconds) {
-            return ColorAccent;
+            var pulse = 0.5f + 0.5f * Mathf.Sin((float)timeSeconds * 2.4f);
+            return Color.Lerp(ColorInfo, ColorAccent, pulse);
         }
 
-        /// <summary>Static title divider kept under the old name for source compatibility.</summary>
+        /// <summary>Subtle animated title underline for Editor windows.</summary>
         public static void AnimatedAccentLine(float thickness = 2f, double? timeSeconds = null) {
             var rect = EditorGUILayout.GetControlRect(false, Mathf.Max(1f, thickness), GUILayout.ExpandWidth(true));
-            var line = new Rect(rect.x, rect.y + Mathf.Floor((rect.height - 1f) * 0.5f), rect.width, 1f);
-            EditorGUI.DrawRect(line, ColorDividerSubtle);
+            EditorGUI.DrawRect(rect, ColorDividerSubtle);
             if (rect.width <= 1f) return;
 
-            var accent = ColorAccent;
-            accent.a = Mathf.Min(accent.a, 0.7f);
-            var accentWidth = Mathf.Min(rect.width, Mathf.Clamp(rect.width * 0.18f, 42f, 96f));
-            EditorGUI.DrawRect(new Rect(rect.x, line.y, accentWidth, 1f), accent);
+            var now = timeSeconds ?? EditorApplication.timeSinceStartup;
+            var cycle = Mathf.Repeat((float)now, 2.8f) / 2.8f;
+            var gleamWidth = Mathf.Clamp(rect.width * 0.28f, 48f, 180f);
+            var x = Mathf.Lerp(rect.x - gleamWidth, rect.xMax, cycle);
+            var gleam = new Rect(x, rect.y, gleamWidth, rect.height);
+            EditorGUI.DrawRect(gleam, AnimatedAccentColor(now));
         }
 
         /// <summary>Lower-contrast divider for dense row lists; reads ColorDividerSubtle.</summary>
@@ -552,9 +612,9 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
         }
 
         public static GUIContent TitleContent(string title, string tooltip = null) {
-            // The in-window title bar owns the brand mark. Keeping the
-            // native Unity tab text-only avoids double logos when the tab
-            // and custom title bar are both visible.
+            // The footer owns the only visible brand mark. Keeping the native
+            // Unity tab text-only avoids duplicate logos when custom chrome is
+            // visible in the window body.
             return new GUIContent(title, tooltip ?? title);
         }
 
@@ -600,9 +660,10 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
             return null;
         }
 
-        /// <summary>Draw the standard WhyKnot footer.</summary>
+        /// <summary>Draw the standard WhyKnot footer with a gently animated heart.</summary>
         public static void BrandFooter(double? timeSeconds = null) {
-            var heartColor = ColorUtility.ToHtmlStringRGB(ColorAccent);
+            var now = timeSeconds ?? EditorApplication.timeSinceStartup;
+            var heartColor = ColorUtility.ToHtmlStringRGB(AnimatedAccentColor(now));
             var text = "Made with <color=#" + heartColor + ">\u2665</color> by WhyKnot";
             using (new EditorGUILayout.HorizontalScope(GUILayout.ExpandWidth(true), GUILayout.MinHeight(22))) {
                 if (BrandLogoTexture != null) {
@@ -622,9 +683,13 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
             BrandFooter();
         }
 
-        /// <summary>Compatibility no-op for windows that used to repaint animated chrome.</summary>
+        /// <summary>Throttle animated chrome repaints for windows that do not inherit WkToolWindow.</summary>
         public static void RepaintAnimatedChrome(EditorWindow window, ref double nextRepaintTime) {
-            nextRepaintTime = EditorApplication.timeSinceStartup + 1.0;
+            if (window == null) return;
+            var now = EditorApplication.timeSinceStartup;
+            if (now < nextRepaintTime) return;
+            nextRepaintTime = now + (1.0 / 30.0);
+            window.Repaint();
         }
 
         /// <summary>
@@ -664,10 +729,6 @@ namespace WhyKnot.AvatarQol.Internal.Styling {
         /// </summary>
         public static void TitleBar(string title, string helpUrl = null) {
             using (new EditorGUILayout.HorizontalScope()) {
-                if (BrandLogoTexture != null) {
-                    BrandLogoMark(34f, 22f, 0.9f);
-                    GUILayout.Space(4f);
-                }
                 EditorGUILayout.LabelField(title, SectionTitle);
                 if (!string.IsNullOrEmpty(helpUrl)) {
                     GUILayout.FlexibleSpace();

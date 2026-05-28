@@ -24,7 +24,8 @@ namespace WhyKnot.AvatarQol.Tools {
         private void DrawSelection() {
             using (WkStyles.Section($"1. Choose bones ({_selection.Count})",
                     "Drop the bones the preset will set up. Each top-level bone you drop in becomes a chain root; descendants are walked automatically. Pick the ear roots, the tail base, the skirt panel anchors, etc.")) {
-                using (new EditorGUILayout.VerticalScope(GUILayout.MinHeight(60), GUILayout.MaxHeight(150))) {
+                using (new EditorGUILayout.VerticalScope(
+                        GUILayout.Height(WkStyles.CappedListHeight(_selection.Count, 22f, 70f, 150f)))) {
                     _selectionScroll = EditorGUILayout.BeginScrollView(_selectionScroll);
                     if (_selection.Count == 0) {
                         EditorGUILayout.LabelField(

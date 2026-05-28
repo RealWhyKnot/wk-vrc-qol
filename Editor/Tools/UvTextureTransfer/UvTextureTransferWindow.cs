@@ -69,6 +69,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private UvTextureTransferCore.TransferResult _lastResult;
         private bool _hasResult;
         private Vector2 _pageScroll;
+        private string _autoSizeSignature;
 
         // ---- Prefs keys ----
         private const string PrefsPrefix     = "dev.whyknot.wk-vrc-qol.UvTextureTransfer.";
@@ -138,6 +139,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 WkStyles.WindowFooter();
             }
+            RequestAutoSize();
         }
 
         private void DrawTitleBar() {
@@ -158,6 +160,23 @@ namespace WhyKnot.AvatarQol.Tools {
         private void DrawHelpNotice() {
             WkStyles.Notice(NoticeKind.Info,
                 "Pick a source mesh and the texture authored for it, pick the target renderer in your scene, choose alignment, then Bake. Projected modes avoid grabbing unrelated nearby surfaces; Legacy closest point is available only for comparison.");
+        }
+
+        private void RequestAutoSize() {
+            var sourceId = _sourceMesh != null ? _sourceMesh.GetInstanceID() : 0;
+            var targetId = _targetRenderer != null ? _targetRenderer.GetInstanceID() : 0;
+            var previewId = _previewTex != null ? _previewTex.GetInstanceID() : 0;
+            var signature = $"{sourceId}|{targetId}|{_sourceMeshOptions.Count}|{_sourceTexture != null}|{_hasResult}|{previewId}|{_lastSavedPath}";
+            var preferred = new Vector2(
+                _hasResult ? 720f : 560f,
+                _hasResult ? 760f : 640f);
+            WkStyles.AutoSizeWindow(
+                this,
+                ref _autoSizeSignature,
+                signature,
+                new Vector2(460f, 640f),
+                preferred,
+                new Vector2(920f, 800f));
         }
 
         private void DrawSourceSection() {

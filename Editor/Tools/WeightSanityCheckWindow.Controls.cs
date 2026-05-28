@@ -299,7 +299,9 @@ namespace WhyKnot.AvatarQol.Tools {
                     "Lower 'Center margin' in Advanced toward 0, or confirm the avatar is in T-pose during the scan (the bind-pose math assumes near-bind orientation).");
             }
 
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
+            using (new EditorGUILayout.VerticalScope(
+                    EditorStyles.helpBox,
+                    GUILayout.Height(WkStyles.CappedListHeight(_issues.Count, 24f, 120f, 280f)))) {
                 _scroll = EditorGUILayout.BeginScrollView(_scroll);
                 if (_issues.Count == 0) {
                     EditorGUILayout.LabelField(

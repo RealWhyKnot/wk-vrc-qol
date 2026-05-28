@@ -53,6 +53,7 @@ namespace WhyKnot.AvatarQol.Tools {
         private readonly List<string> _resultDetail = new List<string>();
         private Vector2 _scroll;
         private Vector2 _pageScroll;
+        private string _autoSizeSignature;
 
         // ------ Public entry points ----------------------------------------
 
@@ -103,6 +104,7 @@ namespace WhyKnot.AvatarQol.Tools {
 
                 WkStyles.WindowFooter();
             }
+            RequestAutoSize();
         }
 
         private void DrawTitleBar() {
@@ -294,7 +296,9 @@ namespace WhyKnot.AvatarQol.Tools {
 
         private void DrawResults() {
             if (_resultDetail.Count == 0) return;
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.ExpandHeight(true))) {
+            using (new EditorGUILayout.VerticalScope(
+                    EditorStyles.helpBox,
+                    GUILayout.Height(WkStyles.CappedListHeight(_resultDetail.Count, 16f, 92f, 220f)))) {
                 EditorGUILayout.LabelField("Last run", WkStyles.SubsectionTitle);
                 _scroll = EditorGUILayout.BeginScrollView(_scroll);
                 foreach (var line in _resultDetail) {
@@ -302,6 +306,21 @@ namespace WhyKnot.AvatarQol.Tools {
                 }
                 EditorGUILayout.EndScrollView();
             }
+        }
+
+        private void RequestAutoSize() {
+            var animatorId = _animator != null ? _animator.GetInstanceID() : 0;
+            var signature = $"{animatorId}|{_pairs.Count}|{_resultDetail.Count}|{_resultSummary}|{_deleteMergedBones}|{_reparentChildren}";
+            var preferredHeight = 420f
+                + WkStyles.CappedListHeight(_pairs.Count, 24f, 48f, 160f)
+                + (_resultDetail.Count > 0 ? WkStyles.CappedListHeight(_resultDetail.Count, 16f, 92f, 220f) : 0f);
+            WkStyles.AutoSizeWindow(
+                this,
+                ref _autoSizeSignature,
+                signature,
+                new Vector2(560f, 460f),
+                new Vector2(720f, preferredHeight),
+                new Vector2(920f, 760f));
         }
 
         // ------ Validation -------------------------------------------------
