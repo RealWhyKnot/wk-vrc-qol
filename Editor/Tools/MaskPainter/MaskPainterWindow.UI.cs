@@ -19,7 +19,6 @@ namespace WhyKnot.AvatarQol.Tools {
                 DrawStatusBanner();
                 EditorGUILayout.Space(2);
                 DrawTitleBar();
-                WkStyles.AnimatedAccentLine();
 
                 using (var s = new EditorGUILayout.ScrollViewScope(
                         _pageScroll, false, false,

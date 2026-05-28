@@ -174,7 +174,6 @@ namespace WhyKnot.AvatarQol.Tools {
             using var _wkTheme = WkStyles.Scope(WkTheme.WhyKnot);
             using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true))) {
                 DrawTitleBar();
-                WkStyles.AnimatedAccentLine();
 
                 using (var s = new EditorGUILayout.ScrollViewScope(
                         _pageScroll, false, false,

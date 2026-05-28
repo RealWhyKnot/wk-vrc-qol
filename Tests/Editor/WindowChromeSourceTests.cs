@@ -48,6 +48,12 @@ namespace WhyKnot.AvatarQol.Tests {
             "Editor/Tools/WeightSanityCheckWindow.Controls.cs",
         };
 
+        private static readonly string[] AnimatedChromeMarkers = {
+            "AnimatedAccentLine",
+            "RepaintAnimatedChrome",
+            "AnimateChrome",
+        };
+
         [Test]
         public void PublicWindowsRenderWhyKnotFooter() {
             var packageRoot = LocatePackageRoot();
@@ -119,6 +125,17 @@ namespace WhyKnot.AvatarQol.Tests {
         }
 
         [Test]
+        public void PublicWindowsDoNotDrawAnimatedTopAccent() {
+            var packageRoot = LocatePackageRoot();
+            foreach (var relativePath in PublicWindowSources) {
+                string text = ReadSource(packageRoot, relativePath);
+                foreach (string marker in AnimatedChromeMarkers) {
+                    Assert.IsFalse(text.Contains(marker), $"{relativePath} must not draw animated title chrome.");
+                }
+            }
+        }
+
+        [Test]
         public void PackageIncludesWhyKnotLogoAsset() {
             var packageRoot = LocatePackageRoot();
             var logoPath = Path.Combine(packageRoot, "Editor", "Internal", "Assets", "WhyKnotLogo.png");
@@ -132,6 +149,9 @@ namespace WhyKnot.AvatarQol.Tests {
             StringAssert.Contains("\\u2665", styles);
             StringAssert.Contains("AutoSizeWindow", styles);
             StringAssert.DoesNotContain("new GUIContent(title, BrandLogoTexture", styles);
+            foreach (string marker in AnimatedChromeMarkers) {
+                StringAssert.DoesNotContain(marker, styles);
+            }
         }
 
         private static string ReadSource(string packageRoot, string relativePath) {
