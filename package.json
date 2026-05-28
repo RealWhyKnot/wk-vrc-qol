@@ -1,7 +1,7 @@
 {
   "name": "dev.whyknot.wk-vrc-qol",
   "displayName": "Avatar QoL",
-  "version": "1.4.0-beta.3",
+  "version": "1.4.0-beta.4",
   "unity": "2022.3",
   "description": "Editor tools for VRChat avatars: Weight Sanity Check, PhysBone Presets, Clipping Fixer, Bone Merger, and Mask Painter.",
   "author": {
@@ -9,7 +9,7 @@
     "url": "https://whyknot.dev"
   },
   "license": "GPL-3.0-or-later",
-  "url": "https://github.com/RealWhyKnot/wk-vrc-qol/releases/download/v1.4.0-beta.3/dev.whyknot.wk-vrc-qol-1.4.0-beta.3.zip",
+  "url": "https://github.com/RealWhyKnot/wk-vrc-qol/releases/download/v1.4.0-beta.4/dev.whyknot.wk-vrc-qol-1.4.0-beta.4.zip",
   "documentationUrl": "https://github.com/RealWhyKnot/wk-vrc-qol",
   "changelogUrl": "https://github.com/RealWhyKnot/wk-vrc-qol/blob/main/CHANGELOG.md",
   "vpmDependencies": {
