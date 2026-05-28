@@ -11,7 +11,13 @@ The most recent release is at the top.
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Changed
+- **clipping:** Split scan and apply internals (7378671)
+- **uv:** Split transfer geometry and raster helpers (0c24ac5)
+- **cleanup:** Remove retired avatar tool code (f8eb7ec)
+
+### Fixed
+- **core:** Refresh bundled editor internals (beec500)
 
 ---
 
