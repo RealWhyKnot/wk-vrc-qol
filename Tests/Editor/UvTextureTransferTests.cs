@@ -1,6 +1,6 @@
 // UvTextureTransferTests.cs
 //
-// Pure-math coverage for UvTextureTransferCore. The end-to-end Transfer
+// Pure-math coverage for the UV transfer geometry and raster helpers. The end-to-end Transfer
 // test wires a tiny quad-to-itself round-trip to confirm the rasterizer,
 // the spatial grid, the closest-point query, and the texture sample all
 // agree on the same identity. UI, FBX import, and PNG persistence live
@@ -9,6 +9,7 @@
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
+using WhyKnot.AvatarQol.Geometry;
 using WhyKnot.AvatarQol.Tools;
 
 namespace WhyKnot.AvatarQol.Tests {
@@ -25,7 +26,7 @@ namespace WhyKnot.AvatarQol.Tests {
             var b = new Vector3(1, 0, 0);
             var c = new Vector3(0, 1, 0);
             var p = new Vector3(0.25f, 0.25f, 5f);
-            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            var cp = MeshGeometry.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
             Assert.AreEqual(0.25f, cp.x, 1e-5f);
             Assert.AreEqual(0.25f, cp.y, 1e-5f);
             Assert.AreEqual(0f,    cp.z, 1e-5f);
@@ -42,7 +43,7 @@ namespace WhyKnot.AvatarQol.Tests {
             var c = new Vector3(0, 1, 0);
             // Far outside the triangle in vertex A's region (-x, -y).
             var p = new Vector3(-2f, -3f, 1f);
-            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            var cp = MeshGeometry.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
             Assert.AreEqual(a, cp);
             Assert.AreEqual(1f, wa, 1e-5f);
             Assert.AreEqual(0f, wb, 1e-5f);
@@ -57,7 +58,7 @@ namespace WhyKnot.AvatarQol.Tests {
             // Below the AB edge, halfway across. The closest point on
             // the triangle is the midpoint of AB.
             var p = new Vector3(0.5f, -1f, 0f);
-            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            var cp = MeshGeometry.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
             Assert.AreEqual(0.5f, cp.x, 1e-5f);
             Assert.AreEqual(0f,   cp.y, 1e-5f);
             Assert.AreEqual(0f,   cp.z, 1e-5f);
@@ -72,7 +73,7 @@ namespace WhyKnot.AvatarQol.Tests {
             var b = new Vector3(1, 0, 0);
             var c = new Vector3(0, 1, 0);
             var p = new Vector3(0.2f, 0.2f, 0f);
-            var cp = UvTextureTransferCore.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
+            var cp = MeshGeometry.ClosestPointOnTriangle(p, a, b, c, out float wa, out float wb, out float wc);
             Assert.AreEqual(p, cp);
             Assert.AreEqual(1f, wa + wb + wc, 1e-5f);
         }
@@ -89,9 +90,9 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector3(1, 1, 0), new Vector3(0, 1, 0),
             };
             var triangles = new[] { 0, 1, 2, 0, 2, 3 };
-            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 4);
+            var grid = MeshSpatialQueries.BuildGrid(verts, triangles, dim: 4);
             // Query a point inside the first triangle (0,1,2).
-            var hit = UvTextureTransferCore.QueryClosest(grid, verts, triangles, new Vector3(0.6f, 0.3f, 0f));
+            var hit = MeshSpatialQueries.QueryClosest(grid, verts, triangles, new Vector3(0.6f, 0.3f, 0f));
             Assert.GreaterOrEqual(hit.triangleIndex, 0, "Query must find a triangle.");
             Assert.Less(hit.distance, 1e-4f, "Point is already on the surface; distance should be ~0.");
         }
@@ -102,8 +103,8 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0),
             };
             var triangles = new[] { 0, 1, 2 };
-            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 2);
-            var hit = UvTextureTransferCore.QueryClosest(grid, verts, triangles, new Vector3(0.25f, 0.25f, 3f));
+            var grid = MeshSpatialQueries.BuildGrid(verts, triangles, dim: 2);
+            var hit = MeshSpatialQueries.QueryClosest(grid, verts, triangles, new Vector3(0.25f, 0.25f, 3f));
             Assert.AreEqual(0, hit.triangleIndex);
             Assert.AreEqual(3f, hit.distance, 1e-4f);
             Assert.AreEqual(0.25f, hit.point.x, 1e-5f);
@@ -113,8 +114,8 @@ namespace WhyKnot.AvatarQol.Tests {
 
         [Test]
         public void SpatialGrid_EmptyMesh_QueryReturnsNoHit() {
-            var grid = UvTextureTransferCore.BuildSpatialGrid(new Vector3[0], new int[0], dim: 4);
-            var hit = UvTextureTransferCore.QueryClosest(grid, new Vector3[0], new int[0], Vector3.zero);
+            var grid = MeshSpatialQueries.BuildGrid(new Vector3[0], new int[0], dim: 4);
+            var hit = MeshSpatialQueries.QueryClosest(grid, new Vector3[0], new int[0], Vector3.zero);
             Assert.AreEqual(-1, hit.triangleIndex);
             Assert.IsTrue(float.IsPositiveInfinity(hit.distance));
         }
@@ -128,7 +129,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0.5f, 1, 0),
             };
             var triangles = new[] { 0, 1, 2 };
-            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 4);
+            var grid = MeshSpatialQueries.BuildGrid(verts, triangles, dim: 4);
             int totalEntries = grid.cellTriangles.Length;
             Assert.Greater(totalEntries, 0, "Flat triangle store must have at least one entry.");
             int nonEmptyCells = 0;
@@ -148,7 +149,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector3(1, 1, 0), new Vector3(0, 1, 0),
             };
             var triangles = new[] { 0, 1, 2, 0, 2, 3 };
-            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 4);
+            var grid = MeshSpatialQueries.BuildGrid(verts, triangles, dim: 4);
             for (int i = 0; i + 1 < grid.cellOffsets.Length; i++) {
                 Assert.GreaterOrEqual(grid.cellOffsets[i + 1], grid.cellOffsets[i],
                     $"cellOffsets[{i + 1}] must be >= cellOffsets[{i}]");
@@ -168,8 +169,8 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0),
             };
             var triangles = new[] { 0, 1, 2 };
-            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 4);
-            var hit = UvTextureTransferCore.QueryClosest(grid, verts, triangles, new Vector3(50, 0, 0));
+            var grid = MeshSpatialQueries.BuildGrid(verts, triangles, dim: 4);
+            var hit = MeshSpatialQueries.QueryClosest(grid, verts, triangles, new Vector3(50, 0, 0));
             Assert.AreEqual(0, hit.triangleIndex);
             // Closest point on the triangle to (50, 0, 0) is vertex (1, 0, 0); distance 49.
             Assert.AreEqual(1f, hit.point.x, 1e-3f);
@@ -201,7 +202,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 }
             }
             var triangles = tris.ToArray();
-            var grid = UvTextureTransferCore.BuildSpatialGrid(verts, triangles, dim: 6);
+            var grid = MeshSpatialQueries.BuildGrid(verts, triangles, dim: 6);
             // Fixed seed so a CI flake stays reproducible.
             var rng = new System.Random(31415);
             for (int q = 0; q < 32; q++) {
@@ -209,11 +210,11 @@ namespace WhyKnot.AvatarQol.Tests {
                     (float)rng.NextDouble() * 1.4f - 0.2f,
                     (float)rng.NextDouble() * 1.4f - 0.2f,
                     (float)rng.NextDouble() * 0.6f - 0.3f);
-                var gridHit = UvTextureTransferCore.QueryClosest(grid, verts, triangles, query);
+                var gridHit = MeshSpatialQueries.QueryClosest(grid, verts, triangles, query);
                 // Brute force.
                 float bruteDist = float.PositiveInfinity;
                 for (int t = 0; t < triangles.Length / 3; t++) {
-                    var cp = UvTextureTransferCore.ClosestPointOnTriangle(query,
+                    var cp = MeshGeometry.ClosestPointOnTriangle(query,
                         verts[triangles[t * 3]], verts[triangles[t * 3 + 1]], verts[triangles[t * 3 + 2]],
                         out _, out _, out _);
                     float d = (query - cp).magnitude;
@@ -226,9 +227,9 @@ namespace WhyKnot.AvatarQol.Tests {
 
         [Test]
         public void PickGridDim_ScalesWithTriangleCount() {
-            Assert.AreEqual(4, UvTextureTransferCore.PickGridDim(0));
-            Assert.AreEqual(4, UvTextureTransferCore.PickGridDim(10));
-            int big = UvTextureTransferCore.PickGridDim(100_000);
+            Assert.AreEqual(4, MeshGeometry.PickGridDim(0));
+            Assert.AreEqual(4, MeshGeometry.PickGridDim(10));
+            int big = MeshGeometry.PickGridDim(100_000);
             Assert.GreaterOrEqual(big, 16);
             Assert.LessOrEqual(big, 64);
         }
@@ -244,7 +245,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector2(1, 1), new Vector2(0, 1),
             };
             var tris = new[] { 0, 1, 2, 0, 2, 3 };
-            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 16);
+            var samples = UvTextureRaster.RasterizeTargetUv(uvs, tris, 16);
             int covered = 0;
             for (int i = 0; i < samples.Length; i++) if (samples[i].triangleIndex >= 0) covered++;
             Assert.AreEqual(16 * 16, covered, "A unit-quad UV layout must cover every output texel.");
@@ -256,7 +257,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector2(2, 2), new Vector2(3, 2), new Vector2(2, 3),
             };
             var tris = new[] { 0, 1, 2 };
-            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 8);
+            var samples = UvTextureRaster.RasterizeTargetUv(uvs, tris, 8);
             for (int i = 0; i < samples.Length; i++) {
                 Assert.AreEqual(-1, samples[i].triangleIndex);
             }
@@ -271,7 +272,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1),
             };
             var tris = new[] { 0, 1, 2, 3, 4, 5 };
-            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 8);
+            var samples = UvTextureRaster.RasterizeTargetUv(uvs, tris, 8);
             for (int i = 0; i < samples.Length; i++) {
                 if (samples[i].triangleIndex >= 0) {
                     Assert.AreEqual(0, samples[i].triangleIndex,
@@ -289,7 +290,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector2(0.5f, 0.5f),
             };
             var tris = new[] { 0, 1, 2 };
-            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 4);
+            var samples = UvTextureRaster.RasterizeTargetUv(uvs, tris, 4);
             for (int i = 0; i < samples.Length; i++) {
                 Assert.AreEqual(-1, samples[i].triangleIndex,
                     "Degenerate (zero-area) UV triangle must not write any texel.");
@@ -302,7 +303,7 @@ namespace WhyKnot.AvatarQol.Tests {
                 new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1),
             };
             var tris = new[] { 0, 1, 2 };
-            var samples = UvTextureTransferCore.RasterizeTargetUv(uvs, tris, 16);
+            var samples = UvTextureRaster.RasterizeTargetUv(uvs, tris, 16);
             for (int i = 0; i < samples.Length; i++) {
                 if (samples[i].triangleIndex < 0) continue;
                 float sum = samples[i].wa + samples[i].wb + samples[i].wc;
@@ -673,7 +674,7 @@ namespace WhyKnot.AvatarQol.Tests {
             try {
                 foreach (var u in us) foreach (var v in vs) {
                     var unity = tex.GetPixelBilinear(u, v);
-                    var manual = UvTextureTransferCore.SampleBilinearClamp32(pixels, size, size, u, v);
+                    var manual = UvTextureRaster.SampleBilinearClamp32(pixels, size, size, u, v);
                     Assert.AreEqual(unity.r * 255f, manual.r, 1.5f, $"R at uv ({u},{v})");
                     Assert.AreEqual(unity.g * 255f, manual.g, 1.5f, $"G at uv ({u},{v})");
                     Assert.AreEqual(unity.b * 255f, manual.b, 1.5f, $"B at uv ({u},{v})");
@@ -698,8 +699,8 @@ namespace WhyKnot.AvatarQol.Tests {
             tex.Apply();
             var pixels = tex.GetPixels32();
             try {
-                var left  = UvTextureTransferCore.SampleBilinearClamp32(pixels, 2, 2, -1.5f, 0f);
-                var right = UvTextureTransferCore.SampleBilinearClamp32(pixels, 2, 2,  2.5f, 0f);
+                var left  = UvTextureRaster.SampleBilinearClamp32(pixels, 2, 2, -1.5f, 0f);
+                var right = UvTextureRaster.SampleBilinearClamp32(pixels, 2, 2,  2.5f, 0f);
                 // Both clamp to the same row in v (y=0); horizontal
                 // clamp pins us to column 0 or 1 respectively.
                 Assert.AreEqual(255, left.r); Assert.AreEqual(0,   left.g);
@@ -711,7 +712,7 @@ namespace WhyKnot.AvatarQol.Tests {
 
         [Test]
         public void ColorToColor32_ClampsAndRounds() {
-            var c = UvTextureTransferCore.ColorToColor32(new Color(0f, 0.5f, 1.5f, 1f));
+            var c = UvTextureRaster.ColorToColor32(new Color(0f, 0.5f, 1.5f, 1f));
             Assert.AreEqual(0, c.r);
             Assert.AreEqual(128, c.g);    // 0.5 * 255 + 0.5 = 128
             Assert.AreEqual(255, c.b);    // clamped to 1
