@@ -9,7 +9,18 @@ All notable changes to this project will be documented in this file. Format foll
 
 ## Unreleased
 
-_No notable changes since the last release._
+### Added
+- **ui:** Fit editor tool windows (12e1cbf)
+- **intent:** Cache fixer precompute (19a7f67)
+- **clipping:** Include physbone motion fixes (d5d9cc3)
+- **physbone:** Add clipping fixer (7a7dd67)
+
+### Fixed
+- **ui:** Remove animated title chrome (155ac6c)
+- **clipping:** Reweight clipping fixes (30d2733)
+- **clipping:** Move physbone risks by mesh (b077085)
+- **physbone:** Refresh reinit with sdk signature (298ba07)
+- **clipping:** Separate physbone motion fixes (a726b9d)
 
 ---
 
