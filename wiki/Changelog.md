@@ -11,6 +11,12 @@ The most recent release is at the top.
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v1.4.0-beta.3](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.4.0-beta.3) -- 2026-05-28
+
 ### Added
 - **ui:** Fit editor tool windows (12e1cbf)
 - **intent:** Cache fixer precompute (19a7f67)
