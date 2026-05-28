@@ -11,6 +11,12 @@ The most recent release is at the top.
 
 ## Unreleased
 
+_No notable changes since the last release._
+
+---
+
+## [v1.4.0-beta.4](https://github.com/RealWhyKnot/wk-vrc-qol/releases/tag/v1.4.0-beta.4) -- 2026-05-28
+
 ### Changed
 - **clipping:** Split scan and apply internals (7378671)
 - **uv:** Split transfer geometry and raster helpers (0c24ac5)
