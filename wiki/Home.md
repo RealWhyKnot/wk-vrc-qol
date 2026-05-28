@@ -6,14 +6,11 @@ The [README](https://github.com/RealWhyKnot/wk-vrc-qol/blob/main/README.md) is t
 
 ## How it works (60 seconds)
 
-The framework is small on purpose. Everything is built on Unity's public APIs (Animator/Humanoid, SkinnedMeshRenderer, Mesh) -- no third-party reflection -- so adding a tool is usually one self-contained `[InitializeOnLoad]` static class with one or more `[MenuItem]` entry points.
+The framework is small on purpose. Tools are mostly independent Unity Editor windows and build hooks that use Unity's public APIs (Animator/Humanoid, SkinnedMeshRenderer, Mesh), with shared infrastructure pulled from a bundled `Editor/Internal/` copy of wk-core.
 
-Two shared helpers in `Editor/`:
+Most reusable helpers live under `WhyKnot.AvatarQol.Internal.*`: logging, styling, path utilities, Humanoid side classification, generated-asset scope, and preview/build pipeline glue. Package-specific shared pieces stay narrow: `Editor/Common/` owns avatar intent sessions and preview control, while `Editor/Geometry/` owns reusable mesh triangle and spatial-query math.
 
-1. **`AvatarQol.cs`** -- tiny grab-bag of cross-tool utilities (e.g. hierarchy path formatting).
-2. **`HumanoidSideMap.cs`** -- given a Humanoid Animator, classifies every Transform in its bone tree as Left / Right / Center / Unknown. Used by tools that reason about avatar symmetry. Walks up the parent chain to the nearest Humanoid bone, so custom bones (skirt panels, prop chains) inherit the side of their nearest Humanoid ancestor.
-
-Each tool then picks what it needs from those helpers and otherwise stays independent.
+Each tool picks what it needs from those helpers and otherwise keeps its scan/apply/window code local to the tool.
 
 ## Read these first
 
@@ -29,6 +26,7 @@ Each tool then picks what it needs from those helpers and otherwise stays indepe
 - **PhysBone Clipping Risks** -- reviews likely PhysBone mesh clipping against selected meshes.
 - **Auto Mesh Fixes** -- stores nondestructive clothing fit fixes and previews generated blendshape output.
 - **Mask Painter** -- paints mask textures directly on avatar meshes in Scene view.
+- **UV Texture Transfer** -- bakes texture colors from one UV/layout mesh to another through mesh correspondence.
 - **Bone Merger** -- collapses duplicate or stray rig bones onto the intended bone.
 - **PhysBone Preset** -- builds adaptive PhysBone setups from selected bone chains.
 

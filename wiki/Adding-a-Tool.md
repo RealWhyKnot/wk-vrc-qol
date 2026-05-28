@@ -82,7 +82,7 @@ internal sealed class MyToolWindow : EditorWindow {
 
 ## Using HumanoidSideMap
 
-If your tool reasons about avatar symmetry, `HumanoidSideMap` already does the bone classification:
+If your tool reasons about avatar symmetry, `WhyKnot.AvatarQol.Internal.Utilities.HumanoidSideMap` already does the bone classification:
 
 ```csharp
 var sideMap = new HumanoidSideMap(animator);
