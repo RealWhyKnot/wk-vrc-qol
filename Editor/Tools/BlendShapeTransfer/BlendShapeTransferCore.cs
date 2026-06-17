@@ -41,22 +41,10 @@ namespace WhyKnot.AvatarQol.Tools {
 
         internal sealed class PreviewResult {
             public string Summary = "";
-            public readonly List<TargetResult> Targets = new List<TargetResult>();
+            public readonly List<SurfaceDeltaTargetResult> Targets = new List<SurfaceDeltaTargetResult>();
             public bool ConfigurationError;
             public int ProcessedCount => Targets.Count(t => t.Processed);
             public int SkippedCount => Targets.Count(t => t.Skipped);
-        }
-
-        internal sealed class TargetResult {
-            public SkinnedMeshRenderer Renderer;
-            public bool Processed;
-            public bool Skipped;
-            public string Reason = "";
-            public int TotalVertices;
-            public int AffectedVertices;
-            public float MaxObservedDistance;
-            public float MaxObservedDelta;
-            public readonly List<BlendShapeUtility.Frame> Frames = new List<BlendShapeUtility.Frame>();
         }
 
         internal sealed class ApplyResult {
@@ -68,19 +56,6 @@ namespace WhyKnot.AvatarQol.Tools {
             public bool ConfigurationError;
         }
 
-        private sealed class SourceData {
-            public Mesh Mesh;
-            public int ShapeIndex;
-            public Vector3[] WorldVertices;
-            public Vector3[][] WorldDeltasByFrame;
-            public float[] FrameWeights;
-            public int[] Triangles;
-            public Vector3[] FaceNormals;
-            public MeshSpatialGrid Grid;
-            public Bounds ActiveBounds;
-            public bool HasActiveDelta;
-        }
-
         internal static PreviewResult Preview(Options options) {
             var result = new PreviewResult();
             string error = ValidateOptions(options);
@@ -90,7 +65,7 @@ namespace WhyKnot.AvatarQol.Tools {
                 return result;
             }
 
-            SourceData source = BuildSource(options, out error);
+            SurfaceDeltaField source = BuildSource(options, out error);
             if (!string.IsNullOrEmpty(error)) {
                 result.ConfigurationError = true;
                 result.Summary = error;
@@ -98,8 +73,9 @@ namespace WhyKnot.AvatarQol.Tools {
             }
 
             var targets = DistinctTargets(options.TargetRenderers);
+            var transferOptions = BuildTransferOptions(options);
             foreach (var target in targets) {
-                result.Targets.Add(ComputeTarget(options, source, target));
+                result.Targets.Add(SurfaceDeltaTransfer.ComputeTarget(transferOptions, source, target));
             }
             result.Summary = $"{result.ProcessedCount} renderer(s) would be processed, {result.SkippedCount} skipped.";
             return result;
@@ -163,119 +139,7 @@ namespace WhyKnot.AvatarQol.Tools {
             return AvatarUtility.GetSkinnedMeshes(root).ToList();
         }
 
-        private static TargetResult ComputeTarget(Options options, SourceData source, SkinnedMeshRenderer target) {
-            var result = new TargetResult { Renderer = target };
-            if (target == null) return Skip(result, "Renderer is missing.");
-            if (target == options.SourceRenderer) return Skip(result, "Source renderer.");
-            var mesh = target.sharedMesh;
-            if (mesh == null) return Skip(result, "Renderer has no mesh.");
-            if (!mesh.isReadable) return Skip(result, "Mesh is not readable.");
-            if (!source.HasActiveDelta) return Skip(result, "Source blendshape has no active delta.");
-
-            result.TotalVertices = mesh.vertexCount;
-            var targetSkin = SkinDeform.ComputeSkinMatrices(target, mesh);
-            var targetWorldVertices = SkinDeform.TransformPoints(targetSkin, mesh.vertices);
-            var targetBounds = SkinDeform.ComputeBounds(targetWorldVertices);
-            float maxDistance = Mathf.Max(0f, options.MaxDistance);
-            var expandedSourceBounds = SkinDeform.Expand(source.ActiveBounds, maxDistance);
-            if (!expandedSourceBounds.Intersects(targetBounds)) {
-                return Skip(result, "Outside active source shape bounds.");
-            }
-
-            var targetNormals = SkinDeform.TransformVectors(targetSkin, MeshGeometry.ResolveNormals(mesh));
-            int frameCount = source.WorldDeltasByFrame.Length;
-            var localDeltasByFrame = new Vector3[frameCount][];
-            for (int frame = 0; frame < frameCount; frame++) {
-                localDeltasByFrame[frame] = new Vector3[mesh.vertexCount];
-            }
-
-            float maxDist = 0f;
-            float maxDelta = 0f;
-            int affected = 0;
-            float epsilonSq = Mathf.Max(options.DeltaEpsilon, 0f) * Mathf.Max(options.DeltaEpsilon, 0f);
-
-            for (int v = 0; v < targetWorldVertices.Length; v++) {
-                var hit = ResolveHit(options, source, targetWorldVertices[v], NormalAt(targetNormals, v));
-                if (hit.triangleIndex < 0) continue;
-                if (maxDistance > 0f && hit.distance > maxDistance) continue;
-                if (hit.distance > maxDist) maxDist = hit.distance;
-
-                int i0 = source.Triangles[hit.triangleIndex * 3];
-                int i1 = source.Triangles[hit.triangleIndex * 3 + 1];
-                int i2 = source.Triangles[hit.triangleIndex * 3 + 2];
-                bool anyDelta = false;
-
-                for (int frame = 0; frame < frameCount; frame++) {
-                    Vector3 worldDelta =
-                        source.WorldDeltasByFrame[frame][i0] * hit.wa +
-                        source.WorldDeltasByFrame[frame][i1] * hit.wb +
-                        source.WorldDeltasByFrame[frame][i2] * hit.wc;
-                    if (worldDelta.sqrMagnitude <= epsilonSq) continue;
-                    if (!SkinDeform.InverseMultiplyVector(targetSkin[v], worldDelta, out Vector3 localDelta)) continue;
-                    localDeltasByFrame[frame][v] = localDelta;
-                    float mag = localDelta.magnitude;
-                    if (mag > maxDelta) maxDelta = mag;
-                    anyDelta = true;
-                }
-                if (anyDelta) affected++;
-            }
-
-            result.MaxObservedDistance = maxDist;
-            result.MaxObservedDelta = maxDelta;
-            result.AffectedVertices = affected;
-            if (affected == 0) return Skip(result, "No vertices close enough to the active source shape.");
-
-            for (int frame = 0; frame < frameCount; frame++) {
-                result.Frames.Add(new BlendShapeUtility.Frame {
-                    Weight = source.FrameWeights[frame],
-                    DeltaVertices = localDeltasByFrame[frame],
-                    DeltaNormals = null,
-                    DeltaTangents = null,
-                });
-            }
-            result.Processed = true;
-            result.Reason = $"affected {affected}/{mesh.vertexCount}";
-            return result;
-        }
-
-        private static MeshClosestHit ResolveHit(
-                Options options,
-                SourceData source,
-                Vector3 targetPoint,
-                Vector3 targetNormal) {
-            switch (options.CorrespondenceMode) {
-                case BlendShapeTransferCorrespondenceMode.NormalRaycast:
-                case BlendShapeTransferCorrespondenceMode.BidirectionalNormalRaycast:
-                    var projected = MeshSpatialQueries.QueryProjected(
-                        source.Grid,
-                        source.WorldVertices,
-                        source.Triangles,
-                        source.FaceNormals,
-                        targetPoint,
-                        targetNormal,
-                        Mathf.Max(options.RayFrontalDistance, options.MaxDistance),
-                        Mathf.Max(options.RayRearDistance, options.MaxDistance),
-                        MeshGeometry.MinNormalDot(options.NormalAngleLimitDegrees),
-                        options.RejectBackfaces,
-                        options.CorrespondenceMode == BlendShapeTransferCorrespondenceMode.BidirectionalNormalRaycast);
-                    return new MeshClosestHit {
-                        triangleIndex = projected.triangleIndex,
-                        point = projected.point,
-                        wa = projected.wa,
-                        wb = projected.wb,
-                        wc = projected.wc,
-                        distance = projected.distance,
-                    };
-                default:
-                    return MeshSpatialQueries.QueryClosest(
-                        source.Grid,
-                        source.WorldVertices,
-                        source.Triangles,
-                        targetPoint);
-            }
-        }
-
-        private static SourceData BuildSource(Options options, out string error) {
+        private static SurfaceDeltaField BuildSource(Options options, out string error) {
             error = null;
             var renderer = options.SourceRenderer;
             var mesh = renderer.sharedMesh;
@@ -290,9 +154,6 @@ namespace WhyKnot.AvatarQol.Tools {
             int frameCount = mesh.GetBlendShapeFrameCount(shapeIndex);
             var worldDeltasByFrame = new Vector3[frameCount][];
             var frameWeights = new float[frameCount];
-            bool activeInitialised = false;
-            var activeBounds = new Bounds();
-            float epsilonSq = Mathf.Max(options.DeltaEpsilon, 0f) * Mathf.Max(options.DeltaEpsilon, 0f);
 
             for (int frame = 0; frame < frameCount; frame++) {
                 var localDeltas = new Vector3[mesh.vertexCount];
@@ -302,31 +163,17 @@ namespace WhyKnot.AvatarQol.Tools {
                 var worldDeltas = SkinDeform.TransformVectors(skin, localDeltas);
                 worldDeltasByFrame[frame] = worldDeltas;
                 frameWeights[frame] = mesh.GetBlendShapeFrameWeight(shapeIndex, frame);
-
-                for (int v = 0; v < worldDeltas.Length; v++) {
-                    if (worldDeltas[v].sqrMagnitude <= epsilonSq) continue;
-                    if (!activeInitialised) {
-                        activeBounds = new Bounds(worldVertices[v], Vector3.zero);
-                        activeInitialised = true;
-                    } else {
-                        activeBounds.Encapsulate(worldVertices[v]);
-                    }
-                }
             }
 
             var triangles = mesh.triangles;
-            return new SourceData {
-                Mesh = mesh,
-                ShapeIndex = shapeIndex,
-                WorldVertices = worldVertices,
-                WorldDeltasByFrame = worldDeltasByFrame,
-                FrameWeights = frameWeights,
-                Triangles = triangles,
-                FaceNormals = MeshGeometry.ComputeFaceNormals(worldVertices, triangles),
-                Grid = MeshSpatialQueries.BuildGrid(worldVertices, triangles, MeshGeometry.PickGridDim(triangles.Length / 3)),
-                ActiveBounds = activeBounds,
-                HasActiveDelta = activeInitialised,
-            };
+            return SurfaceDeltaField.Build(
+                renderer,
+                worldVertices,
+                worldDeltasByFrame,
+                frameWeights,
+                triangles,
+                options.DeltaEpsilon,
+                "Source blendshape has no active delta.");
         }
 
         private static string ValidateOptions(Options options) {
@@ -355,21 +202,33 @@ namespace WhyKnot.AvatarQol.Tools {
             return list;
         }
 
-        private static TargetResult Skip(TargetResult result, string reason) {
-            result.Skipped = true;
-            result.Processed = false;
-            result.Reason = reason;
-            return result;
-        }
-
-        private static Vector3 NormalAt(Vector3[] normals, int index) {
-            if (normals == null || index < 0 || index >= normals.Length) return Vector3.up;
-            return MeshGeometry.SafeNormalize(normals[index], Vector3.up);
-        }
-
         private static string ResolveOutputName(Options options) {
             if (!string.IsNullOrEmpty(options.OutputBlendShapeName)) return options.OutputBlendShapeName;
             return options.SourceBlendShapeName;
+        }
+
+        private static SurfaceDeltaTransferOptions BuildTransferOptions(Options options) {
+            return new SurfaceDeltaTransferOptions {
+                SourceRenderer = options.SourceRenderer,
+                MaxDistance = options.MaxDistance,
+                DeltaEpsilon = options.DeltaEpsilon,
+                CorrespondenceMode = MapCorrespondence(options.CorrespondenceMode),
+                RayFrontalDistance = options.RayFrontalDistance,
+                RayRearDistance = options.RayRearDistance,
+                NormalAngleLimitDegrees = options.NormalAngleLimitDegrees,
+                RejectBackfaces = options.RejectBackfaces,
+            };
+        }
+
+        internal static SurfaceDeltaTransferCorrespondenceMode MapCorrespondence(BlendShapeTransferCorrespondenceMode mode) {
+            switch (mode) {
+                case BlendShapeTransferCorrespondenceMode.NormalRaycast:
+                    return SurfaceDeltaTransferCorrespondenceMode.NormalRaycast;
+                case BlendShapeTransferCorrespondenceMode.BidirectionalNormalRaycast:
+                    return SurfaceDeltaTransferCorrespondenceMode.BidirectionalNormalRaycast;
+                default:
+                    return SurfaceDeltaTransferCorrespondenceMode.ClosestPoint;
+            }
         }
 
         private static string RendererPath(SkinnedMeshRenderer renderer) {

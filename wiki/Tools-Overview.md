@@ -197,3 +197,24 @@ Exact duplicate rows (same LEFT and same RIGHT) are tolerated as redundant.
 **Auto-skip:** Targets outside the active source shape bounds are skipped before per-vertex processing. After processing, targets with no affected vertices are skipped and left unchanged.
 
 **Limits:** The tool transfers delta vertices only. Delta normals and tangents are left for Unity to derive from the resulting mesh shading.
+
+## Bone Scale Follow
+
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Bone Scale Follow...*, or right-click a mesh in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Generate bone-scale follow blendshape...*.
+
+**What it does:** Generates a blendshape for nearby meshes from a source bone-scale deformation. This is useful when a body bone scale changes the body shape but nearby clothing is weighted to other bones and should follow without scaling its own bones.
+
+**How it works:**
+
+1. Pick the source `SkinnedMeshRenderer`.
+2. Add one or more enabled bone scale rows.
+3. Set each row's base local scale and target local scale.
+4. Pick target mode: entire avatar or a manual renderer list.
+5. Click *Preview*, uncheck any target that should not be written, then click *Apply*.
+
+**Safety:** The tool computes the bone-scale deformation from hierarchy matrices and does not write scene `Transform.localScale` values during preview or apply. It writes new mesh assets under `Assets/AvatarQol Generated/`, adds or replaces the output blendshape, and does not edit bones or PhysBone components.
+
+**Options:**
+
+- **Own-response compensation** *(default)* subtracts a target mesh's existing response to the same bone scale before writing the blendshape, avoiding double movement on meshes that are partially weighted to the source bone.
+- **Distance falloff** fades deltas near the max-distance edge to reduce hard seams on continuous clothing.

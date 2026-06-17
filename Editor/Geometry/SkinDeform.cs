@@ -10,6 +10,14 @@ namespace WhyKnot.AvatarQol.Geometry {
     internal static class SkinDeform {
 
         internal static Matrix4x4[] ComputeSkinMatrices(SkinnedMeshRenderer renderer, Mesh mesh) {
+            return ComputeSkinMatrices(renderer, mesh, null);
+        }
+
+        internal static Matrix4x4[] ComputeSkinMatrices(
+                SkinnedMeshRenderer renderer,
+                Mesh mesh,
+                Matrix4x4[] boneWorldMatrices) {
+
             if (renderer == null || mesh == null) return new Matrix4x4[0];
             int vertexCount = mesh.vertexCount;
             var output = new Matrix4x4[vertexCount];
@@ -40,9 +48,15 @@ namespace WhyKnot.AvatarQol.Geometry {
                     var bw = weights[cursor + k];
                     int boneIndex = bw.boneIndex;
                     if (boneIndex < 0 || boneIndex >= bones.Length || boneIndex >= bindposes.Length) continue;
-                    var bone = bones[boneIndex];
-                    if (bone == null) continue;
-                    AddWeighted(ref skin, bone.localToWorldMatrix * bindposes[boneIndex], bw.weight);
+                    Matrix4x4 boneWorld;
+                    if (boneWorldMatrices != null && boneIndex < boneWorldMatrices.Length) {
+                        boneWorld = boneWorldMatrices[boneIndex];
+                    } else {
+                        var bone = bones[boneIndex];
+                        if (bone == null) continue;
+                        boneWorld = bone.localToWorldMatrix;
+                    }
+                    AddWeighted(ref skin, boneWorld * bindposes[boneIndex], bw.weight);
                     sum += bw.weight;
                 }
                 cursor += count;
