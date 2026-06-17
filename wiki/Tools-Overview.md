@@ -147,3 +147,53 @@ Exact duplicate rows (same LEFT and same RIGHT) are tolerated as redundant.
 **Limits:** The merge-into bone must already exist in each affected renderer's `bones[]` array. If it isn't (e.g. you're trying to merge into a bone the mesh has never been skinned to), the row is skipped for that mesh with a console-style warning in the result panel.
 
 > _Screenshot: TODO_
+
+## Orphaned Bone Weight Cleaner
+
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Orphaned Bone Weight Cleaner...*, or right-click an avatar or mesh in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Clean orphaned bone weights...*.
+
+**What it does:** Cleans vertices after bones have been deleted or detached from a renderer's `bones[]` list. The default mode drops invalid weight slots and renormalizes the remaining valid weights. A vertex is deleted only when no valid weight remains.
+
+**How it works:**
+
+1. Pick an avatar Animator to scan every `SkinnedMeshRenderer`, or turn that off and process one renderer.
+2. Optionally list bones that should be treated as removed even if the Transform still exists.
+3. Click *Clean weights*. A new mesh asset is written under `Assets/AvatarQol Generated/` for each affected renderer; imported model files are not edited.
+
+**Options:**
+
+- **Drop invalid weights** *(default)* -- removes invalid weight slots, rescales the remaining weights, and keeps geometry when possible.
+- **Delete vertices with invalid weights** -- removes any vertex touched by an invalid weight slot.
+- **Grow deletion across connected triangles** -- expands deletion across connected geometry islands. Use when a dangling remnant should be removed along with the orphaned weights.
+
+## Material Polygon Remover
+
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> Material Polygon Remover...*, or right-click a mesh in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Remove polygons by material...*.
+
+**What it does:** Creates a new mesh with all polygons assigned to selected material slots removed. Remaining material slots are remapped in order.
+
+**How it works:**
+
+1. Pick a `SkinnedMeshRenderer`.
+2. Check the material slots to remove.
+3. Click *Remove polygons*. The tool compacts the mesh to vertices still used by surviving triangles and writes a new mesh asset under `Assets/AvatarQol Generated/`.
+
+**Preserved data:** normals, tangents, colors, UV0 through UV7, modern bone weights, bindposes, and existing blendshapes.
+
+## BlendShape Transfer
+
+**Where:** *Tools -> WhyKnot -> wk-vrc-qol -> BlendShape Transfer...*, or right-click a mesh with blendshapes in the hierarchy -> *WhyKnot -> wk-vrc-qol -> Transfer blendshape from this...*.
+
+**What it does:** Transfers an already-authored blendshape from one body mesh onto nearby body or clothing meshes. The common workflow is to author a shape on the body, preview which meshes are close enough to receive it, then apply to the selected targets.
+
+**How it works:**
+
+1. Pick the source `SkinnedMeshRenderer` and source blendshape.
+2. Pick target mode: the entire avatar under the source root, or a manual renderer list.
+3. Tune max distance and correspondence mode.
+4. Click *Preview* to see which renderers will be processed or skipped.
+5. Click *Apply* to write new mesh assets for processed renderers and add or replace the transferred blendshape.
+
+**Auto-skip:** Targets outside the active source shape bounds are skipped before per-vertex processing. After processing, targets with no affected vertices are skipped and left unchanged.
+
+**Limits:** The tool transfers delta vertices only. Delta normals and tangents are left for Unity to derive from the resulting mesh shading.

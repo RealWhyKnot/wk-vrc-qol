@@ -1,12 +1,20 @@
 [CmdletBinding()]
-param()
+param(
+    [Alias('AvatarPath')]
+    [string]$ProjectPath = 'D:\WhyKnot Stuff\VRChat\Avatars\Ellie'
+)
 
 $ErrorActionPreference = 'Continue'
 
 $unity   = 'C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Unity.exe'
-$project = 'D:\WhyKnot Stuff\VRChat\Avatars\Ume'
+$project = $ProjectPath
 $results = Join-Path $env:TEMP 'wk-vrc-qol-test-results.xml'
 $log     = Join-Path $env:TEMP 'wk-vrc-qol-test-unity.log'
+
+if (-not (Test-Path $project)) {
+    Write-Error "Project path not found: $project"
+    exit 1
+}
 
 if (Test-Path $results) { Remove-Item $results -Force }
 if (Test-Path $log)     { Remove-Item $log -Force }

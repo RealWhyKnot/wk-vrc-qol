@@ -34,6 +34,41 @@ namespace WhyKnot.AvatarQol.Internal.Utilities {
         }
 
         /// <summary>
+        /// Persist a freshly-built mesh as a standalone asset and assign it
+        /// to <paramref name="renderer"/>. Use this when the caller rebuilt
+        /// topology instead of editing the renderer's current mesh in place.
+        /// </summary>
+        public static ResolveResult WriteNewMeshAsset(
+            SkinnedMeshRenderer renderer,
+            Mesh newMesh,
+            string cloneSuffix,
+            string undoLabel,
+            string generatedFolder) {
+
+            var result = new ResolveResult { Mesh = newMesh, WasCloned = false, ClonedPath = null };
+            if (renderer == null || newMesh == null) return result;
+
+            EnsureFolder(generatedFolder);
+            string sanitizedSuffix = SanitizeFileName(cloneSuffix);
+            string baseName = SanitizeFileName(newMesh.name);
+            string targetPath = AssetDatabase.GenerateUniqueAssetPath(
+                $"{generatedFolder}/{baseName}_{sanitizedSuffix}.asset");
+
+            newMesh.hideFlags = HideFlags.None;
+            AssetDatabase.CreateAsset(newMesh, targetPath);
+            Undo.RegisterCreatedObjectUndo(newMesh, undoLabel);
+
+            Undo.RecordObject(renderer, undoLabel);
+            renderer.sharedMesh = newMesh;
+            EditorUtility.SetDirty(renderer);
+
+            result.Mesh = newMesh;
+            result.WasCloned = true;
+            result.ClonedPath = targetPath;
+            return result;
+        }
+
+        /// <summary>
         /// If <paramref name="sharedMesh"/> is a sub-asset of an imported
         /// model, clone it to <paramref name="generatedFolder"/> and rewire
         /// <paramref name="renderer"/> to the clone. Otherwise return the

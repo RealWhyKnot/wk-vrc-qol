@@ -33,6 +33,13 @@ namespace WhyKnot.AvatarQol.Internal.Utilities {
             public readonly List<Vector3[]> DeltaTangents = new List<Vector3[]>();
         }
 
+        public struct Frame {
+            public float Weight;
+            public Vector3[] DeltaVertices;
+            public Vector3[] DeltaNormals;
+            public Vector3[] DeltaTangents;
+        }
+
         /// <summary>
         /// Insert or replace a single-frame blendshape on the mesh,
         /// preserving every other shape's frames byte-for-byte and in
@@ -43,10 +50,28 @@ namespace WhyKnot.AvatarQol.Internal.Utilities {
         /// </summary>
         public static bool AddOrReplace(Mesh mesh, string shapeName, Vector3[] deltaVertices,
                                         Vector3[] deltaNormals = null, Vector3[] deltaTangents = null) {
-            if (mesh == null || string.IsNullOrEmpty(shapeName) || deltaVertices == null) return false;
-            if (deltaVertices.Length != mesh.vertexCount) return false;
-            if (deltaNormals  != null && deltaNormals.Length  != mesh.vertexCount) return false;
-            if (deltaTangents != null && deltaTangents.Length != mesh.vertexCount) return false;
+            return AddOrReplaceFrames(mesh, shapeName, new[] {
+                new Frame {
+                    Weight = 100f,
+                    DeltaVertices = deltaVertices,
+                    DeltaNormals = deltaNormals,
+                    DeltaTangents = deltaTangents,
+                },
+            });
+        }
+
+        /// <summary>
+        /// Insert or replace a blendshape with one or more frames,
+        /// preserving every other shape in original order.
+        /// </summary>
+        public static bool AddOrReplaceFrames(Mesh mesh, string shapeName, IList<Frame> frames) {
+            if (mesh == null || string.IsNullOrEmpty(shapeName) || frames == null || frames.Count == 0) return false;
+            for (int i = 0; i < frames.Count; i++) {
+                var frame = frames[i];
+                if (frame.DeltaVertices == null || frame.DeltaVertices.Length != mesh.vertexCount) return false;
+                if (frame.DeltaNormals != null && frame.DeltaNormals.Length != mesh.vertexCount) return false;
+                if (frame.DeltaTangents != null && frame.DeltaTangents.Length != mesh.vertexCount) return false;
+            }
 
             var snapshots = new List<Snapshot>();
             int vertexCount = mesh.vertexCount;
@@ -54,8 +79,8 @@ namespace WhyKnot.AvatarQol.Internal.Utilities {
                 string existingName = mesh.GetBlendShapeName(i);
                 if (string.Equals(existingName, shapeName, StringComparison.Ordinal)) continue;
                 var snap = new Snapshot { Name = existingName };
-                int frames = mesh.GetBlendShapeFrameCount(i);
-                for (int f = 0; f < frames; f++) {
+                int existingFrameCount = mesh.GetBlendShapeFrameCount(i);
+                for (int f = 0; f < existingFrameCount; f++) {
                     var dv = new Vector3[vertexCount];
                     var dn = new Vector3[vertexCount];
                     var dt = new Vector3[vertexCount];
@@ -80,7 +105,15 @@ namespace WhyKnot.AvatarQol.Internal.Utilities {
                 }
             }
 
-            mesh.AddBlendShapeFrame(shapeName, 100f, deltaVertices, deltaNormals, deltaTangents);
+            for (int i = 0; i < frames.Count; i++) {
+                var frame = frames[i];
+                mesh.AddBlendShapeFrame(
+                    shapeName,
+                    frame.Weight,
+                    frame.DeltaVertices,
+                    frame.DeltaNormals,
+                    frame.DeltaTangents);
+            }
             return true;
         }
 
