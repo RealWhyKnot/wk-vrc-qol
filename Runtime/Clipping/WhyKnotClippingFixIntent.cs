@@ -57,7 +57,7 @@ namespace WhyKnot.AvatarQol.Components {
         [Tooltip("Also scan the target mesh against itself and reweight obvious self-intersections.")]
         public bool checkSelf = true;
 
-        [Tooltip("Also scan native VRC PhysBones and supported generated/custom PhysBone sources, then reweight risky vertices toward nearby stable surfaces.")]
+        [Tooltip("Also scan native VRC PhysBones and supported generated/custom PhysBone sources, then reduce risky PhysBone-driven skin weights toward the stable parent bone.")]
         public bool includePhysBoneMotion = true;
 
         [Header("Detection")]
@@ -75,6 +75,13 @@ namespace WhyKnot.AvatarQol.Components {
 
         [Tooltip("Maximum number of motion warnings one PhysBone source can contribute per scan.")]
         [Range(1, 24)] public int maxIssuesPerPhysBone = 8;
+
+        [Header("PhysBone Repair")]
+        [Tooltip("Fraction of risky PhysBone-driven skin weight to move onto the nearest stable parent bone.")]
+        [Range(0f, 1f)] public float physBoneMotionPinStrength = 0.65f;
+
+        [Tooltip("Local paint radius around each PhysBone motion warning, in metres. Nearby vertices weighted to the same PhysBone chain receive a falloff repair.")]
+        [Range(0f, 0.12f)] public float physBoneMotionBrushRadius = 0.035f;
 
         [Header("When To Run")]
         [Tooltip("Apply fixes when entering Play mode. Mesh is cloned in memory; the source asset is never modified.")]

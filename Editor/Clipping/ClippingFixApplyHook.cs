@@ -196,6 +196,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                 SurfacePadding = intent.surfacePadding,
                 PhysBoneWeightFloor = intent.physBoneWeightFloor,
                 PhysBoneClearanceMargin = intent.physBoneClearanceMargin,
+                PhysBoneMotionPinStrength = intent.physBoneMotionPinStrength,
+                PhysBoneMotionBrushRadius = intent.physBoneMotionBrushRadius,
                 MaxWarnings = 0,
                 MaxIssuesPerPhysBone = intent.maxIssuesPerPhysBone,
             };

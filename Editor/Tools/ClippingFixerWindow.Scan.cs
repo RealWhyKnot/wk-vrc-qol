@@ -72,6 +72,8 @@ namespace WhyKnot.AvatarQol.Tools {
                 SurfacePadding = _surfacePadding,
                 PhysBoneWeightFloor = _physBoneWeightFloor,
                 PhysBoneClearanceMargin = _physBoneClearanceMargin,
+                PhysBoneMotionPinStrength = _physBoneMotionPinStrength,
+                PhysBoneMotionBrushRadius = _physBoneMotionBrushRadius,
                 MaxWarnings = _maxWarnings,
                 MaxIssuesPerPhysBone = _maxIssuesPerPhysBone,
             };

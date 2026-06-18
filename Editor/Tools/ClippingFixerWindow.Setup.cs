@@ -102,6 +102,14 @@ namespace WhyKnot.AvatarQol.Tools {
                         new GUIContent("Warnings per PhysBone",
                             "Caps how many motion warnings one PhysBone source can add to the list."),
                         () => _maxIssuesPerPhysBone = EditorGUILayout.IntSlider(_maxIssuesPerPhysBone, 1, 24));
+                    WkStyles.LabeledField(
+                        new GUIContent("Pin strength",
+                            "Fraction of risky PhysBone-driven skin weight to move onto the nearest stable parent bone when applying a fix."),
+                        () => _physBoneMotionPinStrength = EditorGUILayout.Slider(_physBoneMotionPinStrength, 0f, 1f));
+                    WkStyles.LabeledField(
+                        new GUIContent("Paint radius",
+                            "Local paint radius around each motion warning. Nearby vertices weighted to the same PhysBone chain receive a falloff repair."),
+                        () => _physBoneMotionBrushRadius = EditorGUILayout.Slider(_physBoneMotionBrushRadius, 0f, 0.12f));
                 }
                 WkStyles.LabeledField(
                     new GUIContent("Max warning rows",

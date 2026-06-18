@@ -26,6 +26,8 @@ namespace WhyKnot.AvatarQol.Tools {
         [SerializeField] private float _surfacePadding = 0.005f;
         [SerializeField] private float _physBoneWeightFloor = 0.03f;
         [SerializeField] private float _physBoneClearanceMargin = 0.025f;
+        [SerializeField] private float _physBoneMotionPinStrength = 0.65f;
+        [SerializeField] private float _physBoneMotionBrushRadius = 0.035f;
         [SerializeField] private int _maxWarnings = 250;
         [SerializeField] private int _maxIssuesPerPhysBone = 8;
 

@@ -62,7 +62,7 @@ namespace WhyKnot.AvatarQol.Clipping {
                     result.MeshesCloned = 1;
                     result.RenderersTouched = 1;
                     if (selectedIssues != null && selectedIssues.Count > 0) {
-                        int reweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, meshInitial, useUndo: true);
+                        int reweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, meshInitial, useUndo: true, settings);
                         result.VerticesReweighted = reweighted;
                         result.FixPasses = reweighted > 0 ? 1 : 0;
                     } else {
@@ -70,7 +70,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                             targetRenderer,
                             meshInitial,
                             result,
-                            useUndo: true);
+                            useUndo: true,
+                            settings);
                     }
                 }
                 if (result.VerticesReweighted > 0 && clone != null) {
@@ -109,7 +110,7 @@ namespace WhyKnot.AvatarQol.Clipping {
 
             result.IssuesFound = issues.Count(i => i != null);
             result.RenderersTouched = 1;
-            result.VerticesReweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, WeightEditIssues(issues), useUndo);
+            result.VerticesReweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, WeightEditIssues(issues), useUndo, null);
             result.FixPasses = result.VerticesReweighted > 0 ? 1 : 0;
             result.Summary = BuildSummary(result);
             return result;
@@ -160,7 +161,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                     targetRenderer,
                     meshInitial,
                     result,
-                    useUndo: false);
+                    useUndo: false,
+                    settings);
             }
             result.Summary = BuildSummary(result);
             return result;
@@ -187,7 +189,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                     targetRenderer,
                     meshInitial,
                     result,
-                    useUndo);
+                    useUndo,
+                    settings);
             }
             result.Summary = BuildSummary(result);
             return result;
@@ -197,11 +200,12 @@ namespace WhyKnot.AvatarQol.Clipping {
                 SkinnedMeshRenderer targetRenderer,
                 IList<Issue> meshInitial,
                 Result result,
-                bool useUndo) {
+                bool useUndo,
+                Settings settings) {
 
             if (meshInitial == null || meshInitial.Count == 0) return;
 
-            int reweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, meshInitial, useUndo);
+            int reweighted = ApplyIssueWeightsToCurrentMesh(targetRenderer, meshInitial, useUndo, settings);
             result.VerticesReweighted += reweighted;
             if (reweighted > 0) result.FixPasses++;
         }
@@ -209,8 +213,10 @@ namespace WhyKnot.AvatarQol.Clipping {
         private static int ApplyIssueWeightsToCurrentMesh(
                 SkinnedMeshRenderer targetRenderer,
                 IList<Issue> issues,
-                bool useUndo) {
+                bool useUndo,
+                Settings settings) {
 
+            settings = settings ?? new Settings();
             if (targetRenderer == null || targetRenderer.sharedMesh == null) return 0;
             var mesh = targetRenderer.sharedMesh;
             if (mesh == null || !mesh.isReadable) return 0;
@@ -240,6 +246,7 @@ namespace WhyKnot.AvatarQol.Clipping {
             int reweighted = 0;
             foreach (var issue in issues) {
                 if (issue == null) continue;
+                if (issue.Kind == IssueKind.PhysBoneMotion) continue;
                 if (!TryBuildReferenceWeights(issue, targetRenderer, targetBones, sourceCache, out var reference)) {
                     continue;
                 }
@@ -258,10 +265,242 @@ namespace WhyKnot.AvatarQol.Clipping {
                     }
                 }
             }
+            reweighted += ApplyPhysBoneMotionWeights(targetRenderer, targetBones, editable, changed, issues, settings);
 
             if (reweighted == 0) return 0;
             WriteWeights(mesh, editable, useUndo);
             return reweighted;
+        }
+
+        private static int ApplyPhysBoneMotionWeights(
+                SkinnedMeshRenderer targetRenderer,
+                Transform[] targetBones,
+                List<BoneWeight1>[] editable,
+                bool[] changed,
+                IList<Issue> issues,
+                Settings settings) {
+
+            if (targetRenderer == null || targetBones == null || editable == null || changed == null) return 0;
+            if (issues == null || issues.Count == 0) return 0;
+            float pinStrength = Mathf.Clamp01(settings != null ? settings.PhysBoneMotionPinStrength : 0.65f);
+            if (pinStrength <= 0.0001f) return 0;
+            float brushRadius = Mathf.Max(0f, settings != null ? settings.PhysBoneMotionBrushRadius : 0.035f);
+            float weightFloor = Mathf.Max(0f, settings != null ? settings.PhysBoneWeightFloor : 0.03f);
+
+            RendererSnapshot snapshot = null;
+            if (brushRadius > 0.0001f) snapshot = RendererSnapshot.Build(targetRenderer);
+            var edits = new Dictionary<MotionWeightKey, float>();
+
+            foreach (var issue in issues) {
+                if (issue == null || issue.Kind != IssueKind.PhysBoneMotion) continue;
+                if (!TryResolveMotionPin(issue, targetBones, out var root, out int destinationBone)) continue;
+
+                AddAffectedMotionPins(edits, issue, editable.Length, root, destinationBone, pinStrength);
+                if (brushRadius <= 0.0001f || snapshot == null || snapshot.WorldVertices == null) continue;
+
+                Vector3 center = MotionBrushCenter(issue, snapshot);
+                if (!IsFinite(center)) continue;
+                float radiusSqr = brushRadius * brushRadius;
+                for (int v = 0; v < snapshot.WorldVertices.Length && v < editable.Length; v++) {
+                    var weights = editable[v];
+                    if (!HasMotionWeight(weights, targetBones, root, weightFloor)) continue;
+                    float distSqr = (snapshot.WorldVertices[v] - center).sqrMagnitude;
+                    if (distSqr > radiusSqr) continue;
+                    float dist = Mathf.Sqrt(distSqr);
+                    float falloff = 1f - Mathf.SmoothStep(0f, 1f, brushRadius > 0f ? dist / brushRadius : 1f);
+                    AddMotionPin(edits, v, root, destinationBone, pinStrength * falloff);
+                }
+            }
+
+            if (edits.Count == 0) return 0;
+
+            int reweighted = 0;
+            foreach (var edit in edits) {
+                int vertex = edit.Key.VertexIndex;
+                if (vertex < 0 || vertex >= editable.Length) continue;
+                if (TryApplyMotionPin(
+                        editable[vertex],
+                        targetBones,
+                        edit.Key.Root,
+                        edit.Key.DestinationBone,
+                        edit.Value,
+                        out var next) &&
+                    !AreSameWeights(editable[vertex], next)) {
+                    editable[vertex] = next;
+                    if (!changed[vertex]) {
+                        changed[vertex] = true;
+                        reweighted++;
+                    }
+                }
+            }
+
+            return reweighted;
+        }
+
+        private static void AddAffectedMotionPins(
+                Dictionary<MotionWeightKey, float> edits,
+                Issue issue,
+                int vertexCount,
+                Transform root,
+                int destinationBone,
+                float pinStrength) {
+
+            var affected = issue.AffectedVertexIndices;
+            if (affected == null || affected.Length == 0) {
+                if (issue.VertexIndex >= 0) affected = new[] { issue.VertexIndex };
+                else return;
+            }
+
+            foreach (int vertex in affected) {
+                if (vertex < 0 || vertex >= vertexCount) continue;
+                AddMotionPin(edits, vertex, root, destinationBone, pinStrength);
+            }
+        }
+
+        private static void AddMotionPin(
+                Dictionary<MotionWeightKey, float> edits,
+                int vertex,
+                Transform root,
+                int destinationBone,
+                float fraction) {
+
+            if (edits == null || vertex < 0 || root == null || destinationBone < 0) return;
+            fraction = Mathf.Clamp01(fraction);
+            if (fraction <= 0.0001f) return;
+            var key = new MotionWeightKey(vertex, root, destinationBone);
+            if (!edits.TryGetValue(key, out float current) || fraction > current) {
+                edits[key] = fraction;
+            }
+        }
+
+        private static bool TryResolveMotionPin(
+                Issue issue,
+                Transform[] targetBones,
+                out Transform root,
+                out int destinationBone) {
+
+            root = null;
+            destinationBone = -1;
+            if (issue == null || targetBones == null || targetBones.Length == 0) return false;
+            root = issue.PhysBoneRoot != null ? issue.PhysBoneRoot : issue.DrivenBone;
+            if (root == null) return false;
+
+            var ancestor = root.parent;
+            while (ancestor != null) {
+                int index = FindBoneIndex(targetBones, ancestor);
+                if (index >= 0 && !BoneIsInSubtree(ancestor, root)) {
+                    destinationBone = index;
+                    return true;
+                }
+                ancestor = ancestor.parent;
+            }
+            return false;
+        }
+
+        private static Vector3 MotionBrushCenter(Issue issue, RendererSnapshot snapshot) {
+            if (issue != null &&
+                snapshot != null &&
+                snapshot.WorldVertices != null &&
+                issue.VertexIndex >= 0 &&
+                issue.VertexIndex < snapshot.WorldVertices.Length) {
+                return snapshot.WorldVertices[issue.VertexIndex];
+            }
+            return issue != null ? issue.WorldPosition : Vector3.zero;
+        }
+
+        private static bool TryApplyMotionPin(
+                List<BoneWeight1> source,
+                Transform[] targetBones,
+                Transform root,
+                int destinationBone,
+                float fraction,
+                out List<BoneWeight1> result) {
+
+            result = source;
+            if (source == null || targetBones == null || root == null || destinationBone < 0) return false;
+            fraction = Mathf.Clamp01(fraction);
+            if (fraction <= 0.0001f) return false;
+
+            var weights = new Dictionary<int, float>();
+            float moved = 0f;
+            foreach (var bw in source) {
+                if (bw.boneIndex < 0 || bw.boneIndex >= targetBones.Length || bw.weight <= 0f) continue;
+                var bone = targetBones[bw.boneIndex];
+                bool moving = BoneIsInSubtree(bone, root);
+                float kept = moving ? bw.weight * (1f - fraction) : bw.weight;
+                if (kept > 0.000001f) AddWeight(weights, bw.boneIndex, kept);
+                if (moving) moved += bw.weight * fraction;
+            }
+
+            if (moved <= 0.000001f) return false;
+            AddWeight(weights, destinationBone, moved);
+            result = NormalizeWeights(weights);
+            return result.Count > 0;
+        }
+
+        private static bool HasMotionWeight(
+                List<BoneWeight1> weights,
+                Transform[] targetBones,
+                Transform root,
+                float weightFloor) {
+
+            if (weights == null || targetBones == null || root == null) return false;
+            foreach (var bw in weights) {
+                if (bw.boneIndex < 0 || bw.boneIndex >= targetBones.Length) continue;
+                if (bw.weight < weightFloor) continue;
+                if (BoneIsInSubtree(targetBones[bw.boneIndex], root)) return true;
+            }
+            return false;
+        }
+
+        private static bool BoneIsInSubtree(Transform bone, Transform root) {
+            if (bone == null || root == null) return false;
+            return bone == root || bone.IsChildOf(root);
+        }
+
+        private static void AddWeight(Dictionary<int, float> weights, int boneIndex, float weight) {
+            if (weights == null || boneIndex < 0 || weight <= 0f) return;
+            if (weights.TryGetValue(boneIndex, out float current)) weights[boneIndex] = current + weight;
+            else weights[boneIndex] = weight;
+        }
+
+        private static bool IsFinite(Vector3 value) {
+            return IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z);
+        }
+
+        private static bool IsFinite(float value) {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private readonly struct MotionWeightKey : IEquatable<MotionWeightKey> {
+            public readonly int VertexIndex;
+            public readonly Transform Root;
+            public readonly int DestinationBone;
+
+            public MotionWeightKey(int vertexIndex, Transform root, int destinationBone) {
+                VertexIndex = vertexIndex;
+                Root = root;
+                DestinationBone = destinationBone;
+            }
+
+            public bool Equals(MotionWeightKey other) {
+                return VertexIndex == other.VertexIndex &&
+                       Root == other.Root &&
+                       DestinationBone == other.DestinationBone;
+            }
+
+            public override bool Equals(object obj) {
+                return obj is MotionWeightKey other && Equals(other);
+            }
+
+            public override int GetHashCode() {
+                unchecked {
+                    int hash = VertexIndex;
+                    hash = (hash * 397) ^ (Root != null ? Root.GetHashCode() : 0);
+                    hash = (hash * 397) ^ DestinationBone;
+                    return hash;
+                }
+            }
         }
 
         private static bool TryBuildReferenceWeights(
@@ -434,6 +673,8 @@ namespace WhyKnot.AvatarQol.Clipping {
                 SurfacePadding = source.SurfacePadding,
                 PhysBoneWeightFloor = source.PhysBoneWeightFloor,
                 PhysBoneClearanceMargin = source.PhysBoneClearanceMargin,
+                PhysBoneMotionPinStrength = source.PhysBoneMotionPinStrength,
+                PhysBoneMotionBrushRadius = source.PhysBoneMotionBrushRadius,
                 MaxWarnings = 0,
                 MaxIssuesPerPhysBone = source.MaxIssuesPerPhysBone,
             };

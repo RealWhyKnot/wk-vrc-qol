@@ -29,6 +29,8 @@ namespace WhyKnot.AvatarQol.Clipping {
             public float SurfacePadding = 0.005f;
             public float PhysBoneWeightFloor = 0.03f;
             public float PhysBoneClearanceMargin = 0.025f;
+            public float PhysBoneMotionPinStrength = 0.65f;
+            public float PhysBoneMotionBrushRadius = 0.035f;
             public int MaxWarnings = 250;
             public int MaxIssuesPerPhysBone = 8;
         }

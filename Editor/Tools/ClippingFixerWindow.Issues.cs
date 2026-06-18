@@ -277,6 +277,8 @@ namespace WhyKnot.AvatarQol.Tools {
             intent.physBoneWeightFloor = _physBoneWeightFloor;
             intent.physBoneClearanceMargin = _physBoneClearanceMargin;
             intent.maxIssuesPerPhysBone = _maxIssuesPerPhysBone;
+            intent.physBoneMotionPinStrength = _physBoneMotionPinStrength;
+            intent.physBoneMotionBrushRadius = _physBoneMotionBrushRadius;
 
             var cacheSettings = ClippingFixApplyHook.SettingsFromIntent(intent);
             cacheSettings.Animator = intent.animator;

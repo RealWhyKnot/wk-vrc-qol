@@ -20,7 +20,7 @@ using WhyKnot.AvatarQol.WeightFixes;
 namespace WhyKnot.AvatarQol.Intent {
 
     internal static class IntentPrecomputeUtility {
-        public const int ClippingVersion = 3;
+        public const int ClippingVersion = 4;
         public const int WeightFixVersion = 1;
         public const int BoneMergerVersion = 1;
         public const int PhysBonePresetVersion = 1;
@@ -41,6 +41,8 @@ namespace WhyKnot.AvatarQol.Intent {
             AppendFloat(sb, settings != null ? settings.SurfacePadding : 0f);
             AppendFloat(sb, settings != null ? settings.PhysBoneWeightFloor : 0f);
             AppendFloat(sb, settings != null ? settings.PhysBoneClearanceMargin : 0f);
+            AppendFloat(sb, settings != null ? settings.PhysBoneMotionPinStrength : 0f);
+            AppendFloat(sb, settings != null ? settings.PhysBoneMotionBrushRadius : 0f);
             AppendInt(sb, settings != null ? settings.MaxIssuesPerPhysBone : 0);
             AppendRendererList(sb, comparisonRenderers);
             if (settings != null && settings.IncludePhysBoneMotion) {
