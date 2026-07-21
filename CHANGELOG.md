@@ -11,9 +11,14 @@ All notable changes to this project will be documented in this file. Format foll
 
 ### Added
 - **mesh-cleanup:** Add orphaned bone weight cleaner, material polygon remover, and blendshape transfer tools.
+- **tools:** Add bone scale follow blendshape tool (d3233c8)
+- **tools:** Add mesh cleanup and blendshape transfer (fdc26b7)
 
 ### Changed
 - **deps:** Bump actions/checkout from 6 to 7 (#2) (3d68613)
+
+### Fixed
+- **clipping:** Pin PhysBone motion weights to stable bones (5393319)
 
 ---
 

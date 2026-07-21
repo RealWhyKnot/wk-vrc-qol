@@ -11,8 +11,15 @@ The most recent release is at the top.
 
 ## Unreleased
 
+### Added
+- **tools:** Add bone scale follow blendshape tool (d3233c8)
+- **tools:** Add mesh cleanup and blendshape transfer (fdc26b7)
+
 ### Changed
 - **deps:** Bump actions/checkout from 6 to 7 (#2) (3d68613)
+
+### Fixed
+- **clipping:** Pin PhysBone motion weights to stable bones (5393319)
 
 ---
 
